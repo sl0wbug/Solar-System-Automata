@@ -21,5 +21,7 @@ data class Planet(
     val realSpeed: Float, // Orbital speed (Earth = 1f)
     
     // Using orbitDistance to satisfy PlanetDao ordering
-    val orbitDistance: Float = realDistance 
+    val orbitDistance: Float = realDistance,
+    
+    val description: String = ""
 )
