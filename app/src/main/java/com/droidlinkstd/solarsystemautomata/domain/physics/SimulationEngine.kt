@@ -28,6 +28,7 @@ class RenderSnapshot(val capacity: Int = PhysicsState.DEFAULT_CAPACITY) {
     val posY: DoubleArray = DoubleArray(capacity)
     val radius: FloatArray = FloatArray(capacity)
     val color: IntArray = IntArray(capacity)
+    val names: Array<String> = Array(capacity) { "" }
 
     /**
      * Copies primitive data from [state] using fast memory block copy.
@@ -40,6 +41,7 @@ class RenderSnapshot(val capacity: Int = PhysicsState.DEFAULT_CAPACITY) {
         System.arraycopy(state.posY, 0, posY, 0, n)
         System.arraycopy(state.radius, 0, radius, 0, n)
         System.arraycopy(state.color, 0, color, 0, n)
+        System.arraycopy(state.names, 0, names, 0, n)
     }
 }
 
