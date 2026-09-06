@@ -3,6 +3,8 @@ package com.droidlinkstd.solarsystemautomata.ui.rendering
 import android.graphics.Paint
 import android.graphics.Typeface
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -18,6 +20,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import com.droidlinkstd.solarsystemautomata.domain.physics.SimulationEngine
 import com.droidlinkstd.solarsystemautomata.ui.camera.CameraState
+import com.droidlinkstd.solarsystemautomata.ui.interaction.HitTester
+import com.droidlinkstd.solarsystemautomata.ui.interaction.SlingshotState
 import kotlinx.coroutines.isActive
 
 /**
@@ -63,6 +67,57 @@ class SimulationPaintCache {
         color = 0x88000000.toInt()
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
     }
+
+    val reticlePaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2.5f
+        isAntiAlias = true
+        color = 0xFF38BDF8.toInt() // Vibrant electric cyan
+    }
+
+    val reticleGlowPaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 6.0f
+        isAntiAlias = true
+        color = 0x4438BDF8.toInt() // Soft cyan glow
+    }
+
+    val reticleCornerPaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3.0f
+        strokeCap = Paint.Cap.ROUND
+        isAntiAlias = true
+        color = 0xFFBAE6FD.toInt() // Light cyan tick accents
+    }
+
+    val slingshotLinePaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2.0f
+        isAntiAlias = true
+        color = 0x8894A3B8.toInt()
+    }
+
+    val slingshotArrowPaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3.5f
+        strokeCap = Paint.Cap.ROUND
+        isAntiAlias = true
+        color = 0xFFF59E0B.toInt() // Radiant amber trajectory arrow
+    }
+
+    val slingshotPreviewPaint = Paint().apply {
+        style = Paint.Style.FILL
+        isAntiAlias = true
+    }
+
+    val slingshotTextPaint = Paint().apply {
+        style = Paint.Style.FILL
+        isAntiAlias = true
+        textSize = 28f
+        textAlign = Paint.Align.CENTER
+        color = 0xFFFDE68A.toInt() // Light amber
+        typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+    }
 }
 
 /**
@@ -83,6 +138,8 @@ fun SimulationCanvas(
     trailBuffer: OrbitalTrailBuffer = remember { OrbitalTrailBuffer() },
     starfieldBuffer: StarfieldBuffer = remember { StarfieldBuffer() },
     paintCache: SimulationPaintCache = remember { SimulationPaintCache() },
+    slingshotState: SlingshotState = remember { SlingshotState() },
+    onSpawnBody: ((name: String, mass: Double, radius: Float, color: Int, posX: Double, posY: Double, velX: Double, velY: Double) -> Unit)? = null,
     onFrameMetrics: ((fps: Float, frameTimeMs: Float) -> Unit)? = null
 ) {
     // Frame ticker driven by withFrameNanos to synchronize with Android VSYNC
@@ -95,6 +152,10 @@ fun SimulationCanvas(
 
         while (isActive) {
             androidx.compose.runtime.withFrameNanos { nowNanos ->
+                // Synchronize camera center if tracking a body in follow mode
+                val snapshot = simulationEngine.getRenderSnapshot()
+                cameraState.updateFollow(snapshot)
+
                 frameTicker = nowNanos
 
                 val dt = (nowNanos - lastNanos) * 1e-9
@@ -115,11 +176,72 @@ fun SimulationCanvas(
         }
     }
 
-    Canvas(
-        modifier = modifier
-            .fillMaxSize()
-            .onSizeChanged { size ->
-                cameraState.updateViewport(size.width.toFloat(), size.height.toFloat())
+    val gestureModifier = if (slingshotState.isSpawnModeEnabled) {
+        Modifier.pointerInput(slingshotState, cameraState) {
+            detectDragGestures(
+                onDragStart = { offset ->
+                    slingshotState.startSlingshot(offset.x, offset.y, cameraState)
+                },
+                onDrag = { change, _ ->
+                    change.consume()
+                    slingshotState.updateDrag(change.position.x, change.position.y)
+                },
+                onDragEnd = {
+                    if (slingshotState.isActive) {
+                        val speed = slingshotState.calculateLaunchSpeed(cameraState)
+                        if (speed > 1e-4) {
+                            val preset = slingshotState.selectedPreset
+                            val vx = slingshotState.calculateLaunchVelocityX(cameraState)
+                            val vy = slingshotState.calculateLaunchVelocityY(cameraState)
+                            if (onSpawnBody != null) {
+                                onSpawnBody(
+                                    preset.defaultName,
+                                    preset.mass,
+                                    preset.radius,
+                                    preset.colorHex,
+                                    slingshotState.originWorldX,
+                                    slingshotState.originWorldY,
+                                    vx,
+                                    vy
+                                )
+                            } else {
+                                simulationEngine.spawnBody(
+                                    name = preset.defaultName,
+                                    mass = preset.mass,
+                                    radius = preset.radius,
+                                    color = preset.colorHex,
+                                    posX = slingshotState.originWorldX,
+                                    posY = slingshotState.originWorldY,
+                                    velX = vx,
+                                    velY = vy
+                                )
+                            }
+                        }
+                        slingshotState.cancel()
+                    }
+                },
+                onDragCancel = {
+                    slingshotState.cancel()
+                }
+            )
+        }
+    } else {
+        Modifier
+            .pointerInput(simulationEngine, cameraState) {
+                detectTapGestures { offset ->
+                    val snapshot = simulationEngine.getRenderSnapshot()
+                    val hitIndex = HitTester.findBodyAtScreenOffset(
+                        screenX = offset.x,
+                        screenY = offset.y,
+                        snapshot = snapshot,
+                        cameraState = cameraState
+                    )
+                    if (hitIndex >= 0) {
+                        cameraState.followBody(hitIndex)
+                    } else {
+                        cameraState.stopFollowing()
+                    }
+                }
             }
             .pointerInput(cameraState) {
                 detectTransformGestures { centroid, pan, zoom, _ ->
@@ -127,6 +249,15 @@ fun SimulationCanvas(
                     cameraState.zoomBy(centroid, zoom)
                 }
             }
+    }
+
+    Canvas(
+        modifier = modifier
+            .fillMaxSize()
+            .onSizeChanged { size ->
+                cameraState.updateViewport(size.width.toFloat(), size.height.toFloat())
+            }
+            .then(gestureModifier)
     ) {
         // Register draw-phase dependency on frameTicker without triggering recomposition
         val _tick = frameTicker
@@ -213,6 +344,76 @@ fun SimulationCanvas(
                 }
             }
             bodyIndex++
+        }
+
+        // 6. Draw targeting reticle when a celestial body is tracked in follow mode
+        if (cameraState.isFollowing && cameraState.followedBodyIndex in 0 until count) {
+            val followedIdx = cameraState.followedBodyIndex
+            val fx = cameraState.worldToScreenX(snapshot.posX[followedIdx])
+            val fy = cameraState.worldToScreenY(snapshot.posY[followedIdx])
+
+            val rawRadiusPx = snapshot.radius[followedIdx] * cameraState.zoom
+            val vr = rawRadiusPx.coerceIn(3.5f, 45f)
+            val reticleR = vr + 12f
+
+            // Outer glow ring and sharp cyan reticle
+            nativeCanvas.drawCircle(fx, fy, reticleR, paintCache.reticleGlowPaint)
+            nativeCanvas.drawCircle(fx, fy, reticleR, paintCache.reticlePaint)
+
+            // 4 compass tick marks
+            val tickLen = 6f
+            nativeCanvas.drawLine(fx - reticleR - tickLen, fy, fx - reticleR + tickLen, fy, paintCache.reticleCornerPaint)
+            nativeCanvas.drawLine(fx + reticleR - tickLen, fy, fx + reticleR + tickLen, fy, paintCache.reticleCornerPaint)
+            nativeCanvas.drawLine(fx, fy - reticleR - tickLen, fx, fy - reticleR + tickLen, paintCache.reticleCornerPaint)
+            nativeCanvas.drawLine(fx, fy + reticleR - tickLen, fx, fy + reticleR + tickLen, paintCache.reticleCornerPaint)
+        }
+
+        // 7. Render Slingshot launch trajectory vector when active
+        if (slingshotState.isActive) {
+            val ox = slingshotState.originScreenX
+            val oy = slingshotState.originScreenY
+            val dx = slingshotState.currentDragScreenX
+            val dy = slingshotState.currentDragScreenY
+
+            val preset = slingshotState.selectedPreset
+
+            // Draw pull back line (from origin to finger)
+            nativeCanvas.drawLine(ox, oy, dx, dy, paintCache.slingshotLinePaint)
+            nativeCanvas.drawCircle(dx, dy, 8f, paintCache.slingshotLinePaint)
+
+            // Launch direction is opposite of drag
+            val pullDx = dx - ox
+            val pullDy = dy - oy
+            val launchEndX = ox - pullDx
+            val launchEndY = oy - pullDy
+
+            // Draw trajectory arrow line
+            nativeCanvas.drawLine(ox, oy, launchEndX, launchEndY, paintCache.slingshotArrowPaint)
+
+            // Draw Arrowhead at (launchEndX, launchEndY)
+            val pullDist = Math.sqrt((pullDx * pullDx + pullDy * pullDy).toDouble()).toFloat()
+            if (pullDist > 12f) {
+                val angle = Math.atan2(-pullDy.toDouble(), -pullDx.toDouble())
+                val arrowHeadLen = 20.0
+                val arrowAngle = Math.PI / 6.0 // 30 degrees
+
+                val x1 = launchEndX - (arrowHeadLen * Math.cos(angle - arrowAngle)).toFloat()
+                val y1 = launchEndY - (arrowHeadLen * Math.sin(angle - arrowAngle)).toFloat()
+                val x2 = launchEndX - (arrowHeadLen * Math.cos(angle + arrowAngle)).toFloat()
+                val y2 = launchEndY - (arrowHeadLen * Math.sin(angle + arrowAngle)).toFloat()
+
+                nativeCanvas.drawLine(launchEndX, launchEndY, x1, y1, paintCache.slingshotArrowPaint)
+                nativeCanvas.drawLine(launchEndX, launchEndY, x2, y2, paintCache.slingshotArrowPaint)
+
+                // Draw speed readout
+                val speed = slingshotState.calculateLaunchSpeed(cameraState)
+                val labelText = "${preset.displayName} • ${String.format("%.2f", speed)} AU/s"
+                nativeCanvas.drawText(labelText, launchEndX, launchEndY - 18f, paintCache.slingshotTextPaint)
+            }
+
+            // Draw preview circle of the body to be spawned at origin
+            paintCache.slingshotPreviewPaint.color = preset.colorHex
+            nativeCanvas.drawCircle(ox, oy, (preset.radius * 1.5f).coerceAtLeast(6f), paintCache.slingshotPreviewPaint)
         }
     }
 }

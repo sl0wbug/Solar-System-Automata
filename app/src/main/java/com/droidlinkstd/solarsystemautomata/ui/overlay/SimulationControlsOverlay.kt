@@ -42,6 +42,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.droidlinkstd.solarsystemautomata.domain.physics.SimulationEngine
 import com.droidlinkstd.solarsystemautomata.ui.camera.CameraState
+import com.droidlinkstd.solarsystemautomata.ui.interaction.SlingshotState
+import com.droidlinkstd.solarsystemautomata.ui.interaction.SpawnPreset
 
 /**
  * Lightweight Compose UI floating over the Canvas in a Box.
@@ -59,7 +61,8 @@ fun SimulationControlsOverlay(
     fps: Float,
     frameTimeMs: Float,
     onResetCamera: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    slingshotState: SlingshotState = remember { SlingshotState() }
 ) {
     var isRunning by remember { mutableStateOf(simulationEngine.isRunning) }
     var currentSpeed by remember { mutableDoubleStateOf(simulationEngine.speedMultiplier) }
@@ -70,29 +73,173 @@ fun SimulationControlsOverlay(
             .padding(16.dp)
     ) {
         // --- Top Telemetry HUD ---
-        Row(
+        Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxWidth()
         ) {
-            // System info chip
-            GlassChip(
-                text = "SOLAR SYSTEM",
-                accentColor = Color(0xFF60A5FA)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // System info chip & Mode switcher
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    GlassChip(
+                        text = "SOLAR SYSTEM",
+                        accentColor = Color(0xFF60A5FA)
+                    )
 
-            // Diagnostics HUD (FPS & Frame Time)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                GlassChip(
-                    text = "${simulationEngine.getRenderSnapshot().count} BODIES",
-                    accentColor = Color(0xFF34D399)
-                )
-                GlassChip(
-                    text = "${fps.toInt()} FPS · ${String.format("%.1f", frameTimeMs)}ms",
-                    accentColor = if (fps >= 55f) Color(0xFF38BDF8) else Color(0xFFFBBF24)
-                )
+                    // Spawn / Navigate Mode Toggle
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                if (slingshotState.isSpawnModeEnabled) Color(0xFFD97706) else Color(0xCC0B0F19)
+                            )
+                            .border(
+                                1.dp,
+                                if (slingshotState.isSpawnModeEnabled) Color(0xFFFBBF24) else Color(0x44F59E0B),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .clickable {
+                                slingshotState.isSpawnModeEnabled = !slingshotState.isSpawnModeEnabled
+                                if (slingshotState.isSpawnModeEnabled) {
+                                    cameraState.stopFollowing()
+                                }
+                            }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = if (slingshotState.isSpawnModeEnabled) "🚀 SPAWN" else "🔭 NAV",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (slingshotState.isSpawnModeEnabled) Color.White else Color(0xFFFCD34D),
+                            letterSpacing = 0.5.sp
+                        )
+                    }
+                }
+
+                // Diagnostics HUD (FPS & Frame Time)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GlassChip(
+                        text = "${simulationEngine.getRenderSnapshot().count} BODIES",
+                        accentColor = Color(0xFF34D399)
+                    )
+                    GlassChip(
+                        text = "${fps.toInt()} FPS · ${String.format("%.1f", frameTimeMs)}ms",
+                        accentColor = if (fps >= 55f) Color(0xFF38BDF8) else Color(0xFFFBBF24)
+                    )
+                }
+            }
+
+            // Follow Mode Active Indicator
+            AnimatedVisibility(
+                visible = cameraState.isFollowing,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.padding(top = 8.dp)
+            ) {
+                val snapshot = simulationEngine.getRenderSnapshot()
+                val idx = cameraState.followedBodyIndex
+                val targetName = if (idx in 0 until snapshot.count) {
+                    val name = snapshot.names[idx]
+                    if (name.isNotEmpty()) name else "BODY #$idx"
+                } else {
+                    "TARGET"
+                }
+
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xEE0B132B))
+                        .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF38BDF8))
+                    )
+                    Text(
+                        text = "FOLLOWING: ${targetName.uppercase()}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color(0xFFE0F2FE),
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = "✕",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF94A3B8),
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .clickable { cameraState.stopFollowing() }
+                            .padding(horizontal = 4.dp)
+                    )
+                }
+            }
+
+            // Spawn Preset Selector Row (visible when Spawn Mode is active)
+            AnimatedVisibility(
+                visible = slingshotState.isSpawnModeEnabled,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.padding(top = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0xEE0B1120))
+                        .border(1.dp, Color(0x44F59E0B), RoundedCornerShape(14.dp))
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "FLING:",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color(0xFFF59E0B),
+                        letterSpacing = 0.5.sp
+                    )
+
+                    SpawnPreset.entries.forEach { preset ->
+                        val isSelected = slingshotState.selectedPreset == preset
+                        val presetColor = Color(preset.colorHex)
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (isSelected) presetColor.copy(alpha = 0.35f) else Color(0xFF1E293B)
+                                )
+                                .border(
+                                    1.dp,
+                                    if (isSelected) presetColor else Color(0x22FFFFFF),
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .clickable { slingshotState.selectedPreset = preset }
+                                .padding(vertical = 5.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = preset.displayName,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) Color.White else Color(0xFF94A3B8)
+                            )
+                        }
+                    }
+                }
             }
         }
 
