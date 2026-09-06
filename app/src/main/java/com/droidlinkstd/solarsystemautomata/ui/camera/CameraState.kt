@@ -3,8 +3,10 @@ package com.droidlinkstd.solarsystemautomata.ui.camera
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
+import com.droidlinkstd.solarsystemautomata.domain.physics.RenderSnapshot
 import kotlin.math.max
 import kotlin.math.min
 
@@ -16,6 +18,8 @@ import kotlin.math.min
  * - Zero-allocation coordinate transformations: [worldToScreenX], [worldToScreenY],
  *   [screenToWorldX], and [screenToWorldY] operate entirely on scalar primitives.
  * - Focal-point invariant pinch-to-zoom: coordinates under the gesture centroid stay fixed on screen.
+ * - Follow Mode: Continuously locks camera center to a tracked celestial body index;
+ *   automatically disengages upon manual panning.
  * - Snapshot state properties trigger ONLY Draw-phase invalidations when read inside [DrawScope].
  */
 class CameraState(
@@ -31,6 +35,40 @@ class CameraState(
 
     var viewportWidth: Float by mutableFloatStateOf(0f)
     var viewportHeight: Float by mutableFloatStateOf(0f)
+
+    /** Index of the celestial body currently tracked in follow mode (-1 if unpinned / free camera). */
+    var followedBodyIndex: Int by mutableIntStateOf(-1)
+
+    val isFollowing: Boolean
+        get() = followedBodyIndex >= 0
+
+    /**
+     * Locks the camera focal point onto the specified body index.
+     */
+    fun followBody(index: Int) {
+        followedBodyIndex = index
+    }
+
+    /**
+     * Disengages follow mode back to free camera navigation.
+     */
+    fun stopFollowing() {
+        followedBodyIndex = -1
+    }
+
+    /**
+     * Synchronizes camera center with the followed body position in [snapshot].
+     * Zero heap allocation.
+     */
+    fun updateFollow(snapshot: RenderSnapshot) {
+        val index = followedBodyIndex
+        if (index in 0 until snapshot.count) {
+            centerX = snapshot.posX[index]
+            centerY = snapshot.posY[index]
+        } else if (index >= snapshot.count) {
+            stopFollowing()
+        }
+    }
 
     /**
      * Updates viewport dimensions on screen size / orientation changes.
@@ -74,9 +112,11 @@ class CameraState(
 
     /**
      * Pans the camera by screen pixel delta ([dx], [dy]).
+     * Automatically disengages follow mode to grant immediate free manual camera control.
      */
     fun panBy(dx: Float, dy: Float) {
         if (zoom <= 0f) return
+        stopFollowing()
         centerX -= dx.toDouble() / zoom
         centerY -= dy.toDouble() / zoom
     }
@@ -113,6 +153,7 @@ class CameraState(
 
     /**
      * Adjusts the camera to fit a bounding box in world space with optional padding.
+     * Automatically disengages follow mode.
      */
     fun fitBounds(
         minX: Double,
@@ -121,6 +162,7 @@ class CameraState(
         maxY: Double,
         paddingPx: Float = 64f
     ) {
+        stopFollowing()
         val spanX = maxX - minX
         val spanY = maxY - minY
         val worldSpanX = if (spanX <= 0.0) 1.0 else spanX

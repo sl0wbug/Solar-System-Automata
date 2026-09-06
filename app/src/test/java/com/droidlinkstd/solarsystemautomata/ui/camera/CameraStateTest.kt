@@ -1,7 +1,9 @@
 package com.droidlinkstd.solarsystemautomata.ui.camera
 
 import androidx.compose.ui.geometry.Offset
+import com.droidlinkstd.solarsystemautomata.domain.physics.RenderSnapshot
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -104,5 +106,53 @@ class CameraStateTest {
         assertTrue(screenMaxX <= 1080f - 40f)
         assertTrue(screenMinY >= 40f)
         assertTrue(screenMaxY <= 1920f - 40f)
+    }
+
+    @Test
+    fun followModeSyncsCameraCenterToFollowedBody() {
+        val snapshot = RenderSnapshot(capacity = 2)
+        snapshot.count = 1
+        snapshot.posX[0] = 4200.0
+        snapshot.posY[0] = -8500.0
+
+        camera.followBody(0)
+        assertTrue(camera.isFollowing)
+        assertEquals(0, camera.followedBodyIndex)
+
+        camera.updateFollow(snapshot)
+        assertEquals(4200.0, camera.centerX, 1e-5)
+        assertEquals(-8500.0, camera.centerY, 1e-5)
+    }
+
+    @Test
+    fun panByDisengagesFollowMode() {
+        camera.followBody(2)
+        assertTrue(camera.isFollowing)
+
+        camera.panBy(50f, 50f)
+        assertFalse(camera.isFollowing)
+        assertEquals(-1, camera.followedBodyIndex)
+    }
+
+    @Test
+    fun fitBoundsDisengagesFollowMode() {
+        camera.followBody(1)
+        assertTrue(camera.isFollowing)
+
+        camera.fitBounds(-100.0, -100.0, 100.0, 100.0)
+        assertFalse(camera.isFollowing)
+        assertEquals(-1, camera.followedBodyIndex)
+    }
+
+    @Test
+    fun updateFollowDisengagesWhenBodyOutOfBounds() {
+        val snapshot = RenderSnapshot(capacity = 2)
+        snapshot.count = 1
+
+        camera.followBody(3) // Index 3 does not exist in snapshot of count 1
+        camera.updateFollow(snapshot)
+
+        assertFalse(camera.isFollowing)
+        assertEquals(-1, camera.followedBodyIndex)
     }
 }

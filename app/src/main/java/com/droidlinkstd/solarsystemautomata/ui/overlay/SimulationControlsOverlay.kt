@@ -70,29 +70,85 @@ fun SimulationControlsOverlay(
             .padding(16.dp)
     ) {
         // --- Top Telemetry HUD ---
-        Row(
+        Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxWidth()
         ) {
-            // System info chip
-            GlassChip(
-                text = "SOLAR SYSTEM",
-                accentColor = Color(0xFF60A5FA)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // System info chip
+                GlassChip(
+                    text = "SOLAR SYSTEM",
+                    accentColor = Color(0xFF60A5FA)
+                )
 
-            // Diagnostics HUD (FPS & Frame Time)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                GlassChip(
-                    text = "${simulationEngine.getRenderSnapshot().count} BODIES",
-                    accentColor = Color(0xFF34D399)
-                )
-                GlassChip(
-                    text = "${fps.toInt()} FPS · ${String.format("%.1f", frameTimeMs)}ms",
-                    accentColor = if (fps >= 55f) Color(0xFF38BDF8) else Color(0xFFFBBF24)
-                )
+                // Diagnostics HUD (FPS & Frame Time)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GlassChip(
+                        text = "${simulationEngine.getRenderSnapshot().count} BODIES",
+                        accentColor = Color(0xFF34D399)
+                    )
+                    GlassChip(
+                        text = "${fps.toInt()} FPS · ${String.format("%.1f", frameTimeMs)}ms",
+                        accentColor = if (fps >= 55f) Color(0xFF38BDF8) else Color(0xFFFBBF24)
+                    )
+                }
+            }
+
+            // Follow Mode Active Indicator
+            AnimatedVisibility(
+                visible = cameraState.isFollowing,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.padding(top = 8.dp)
+            ) {
+                val snapshot = simulationEngine.getRenderSnapshot()
+                val idx = cameraState.followedBodyIndex
+                val targetName = if (idx in 0 until snapshot.count) {
+                    val name = snapshot.names[idx]
+                    if (name.isNotEmpty()) name else "BODY #$idx"
+                } else {
+                    "TARGET"
+                }
+
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xEE0B132B))
+                        .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF38BDF8))
+                    )
+                    Text(
+                        text = "FOLLOWING: ${targetName.uppercase()}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color(0xFFE0F2FE),
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = "✕",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF94A3B8),
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .clickable { cameraState.stopFollowing() }
+                            .padding(horizontal = 4.dp)
+                    )
+                }
             }
         }
 

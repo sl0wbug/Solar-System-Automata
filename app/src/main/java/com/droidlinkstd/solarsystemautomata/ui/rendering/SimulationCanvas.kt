@@ -3,6 +3,7 @@ package com.droidlinkstd.solarsystemautomata.ui.rendering
 import android.graphics.Paint
 import android.graphics.Typeface
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -18,6 +19,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import com.droidlinkstd.solarsystemautomata.domain.physics.SimulationEngine
 import com.droidlinkstd.solarsystemautomata.ui.camera.CameraState
+import com.droidlinkstd.solarsystemautomata.ui.interaction.HitTester
 import kotlinx.coroutines.isActive
 
 /**
@@ -63,6 +65,28 @@ class SimulationPaintCache {
         color = 0x88000000.toInt()
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
     }
+
+    val reticlePaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2.5f
+        isAntiAlias = true
+        color = 0xFF38BDF8.toInt() // Vibrant electric cyan
+    }
+
+    val reticleGlowPaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 6.0f
+        isAntiAlias = true
+        color = 0x4438BDF8.toInt() // Soft cyan glow
+    }
+
+    val reticleCornerPaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3.0f
+        strokeCap = Paint.Cap.ROUND
+        isAntiAlias = true
+        color = 0xFFBAE6FD.toInt() // Light cyan tick accents
+    }
 }
 
 /**
@@ -95,6 +119,10 @@ fun SimulationCanvas(
 
         while (isActive) {
             androidx.compose.runtime.withFrameNanos { nowNanos ->
+                // Synchronize camera center if tracking a body in follow mode
+                val snapshot = simulationEngine.getRenderSnapshot()
+                cameraState.updateFollow(snapshot)
+
                 frameTicker = nowNanos
 
                 val dt = (nowNanos - lastNanos) * 1e-9
@@ -120,6 +148,22 @@ fun SimulationCanvas(
             .fillMaxSize()
             .onSizeChanged { size ->
                 cameraState.updateViewport(size.width.toFloat(), size.height.toFloat())
+            }
+            .pointerInput(simulationEngine, cameraState) {
+                detectTapGestures { offset ->
+                    val snapshot = simulationEngine.getRenderSnapshot()
+                    val hitIndex = HitTester.findBodyAtScreenOffset(
+                        screenX = offset.x,
+                        screenY = offset.y,
+                        snapshot = snapshot,
+                        cameraState = cameraState
+                    )
+                    if (hitIndex >= 0) {
+                        cameraState.followBody(hitIndex)
+                    } else {
+                        cameraState.stopFollowing()
+                    }
+                }
             }
             .pointerInput(cameraState) {
                 detectTransformGestures { centroid, pan, zoom, _ ->
@@ -213,6 +257,28 @@ fun SimulationCanvas(
                 }
             }
             bodyIndex++
+        }
+
+        // 6. Draw targeting reticle when a celestial body is tracked in follow mode
+        if (cameraState.isFollowing && cameraState.followedBodyIndex in 0 until count) {
+            val followedIdx = cameraState.followedBodyIndex
+            val fx = cameraState.worldToScreenX(snapshot.posX[followedIdx])
+            val fy = cameraState.worldToScreenY(snapshot.posY[followedIdx])
+
+            val rawRadiusPx = snapshot.radius[followedIdx] * cameraState.zoom
+            val vr = rawRadiusPx.coerceIn(3.5f, 45f)
+            val reticleR = vr + 12f
+
+            // Outer glow ring and sharp cyan reticle
+            nativeCanvas.drawCircle(fx, fy, reticleR, paintCache.reticleGlowPaint)
+            nativeCanvas.drawCircle(fx, fy, reticleR, paintCache.reticlePaint)
+
+            // 4 compass tick marks
+            val tickLen = 6f
+            nativeCanvas.drawLine(fx - reticleR - tickLen, fy, fx - reticleR + tickLen, fy, paintCache.reticleCornerPaint)
+            nativeCanvas.drawLine(fx + reticleR - tickLen, fy, fx + reticleR + tickLen, fy, paintCache.reticleCornerPaint)
+            nativeCanvas.drawLine(fx, fy - reticleR - tickLen, fx, fy - reticleR + tickLen, paintCache.reticleCornerPaint)
+            nativeCanvas.drawLine(fx, fy + reticleR - tickLen, fx, fy + reticleR + tickLen, paintCache.reticleCornerPaint)
         }
     }
 }
