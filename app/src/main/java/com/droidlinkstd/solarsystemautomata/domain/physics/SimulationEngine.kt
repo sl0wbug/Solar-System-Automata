@@ -171,6 +171,66 @@ class SimulationEngine(
     }
 
     /**
+     * Injects a newly spawned celestial body into the active simulation.
+     * Thread-safe and guaranteed zero-allocation during insertion.
+     *
+     * @return true if successfully inserted, false if state capacity is exhausted.
+     */
+    fun spawnBody(
+        name: String,
+        mass: Double,
+        radius: Float,
+        color: Int,
+        posX: Double,
+        posY: Double,
+        velX: Double,
+        velY: Double,
+        repository: CelestialBodyRepository? = null
+    ): Boolean {
+        var inserted = false
+        synchronized(physicsState) {
+            val count = physicsState.count
+            if (count < capacity) {
+                physicsState.posX[count] = posX
+                physicsState.posY[count] = posY
+                physicsState.velX[count] = velX
+                physicsState.velY[count] = velY
+                physicsState.accX[count] = 0.0
+                physicsState.accY[count] = 0.0
+                physicsState.mass[count] = mass
+                physicsState.radius[count] = radius
+                physicsState.color[count] = color
+                physicsState.names[count] = name
+                physicsState.count = count + 1
+
+                // Recalculate pairwise accelerations for all bodies
+                integrator.computeAccelerations(physicsState, g, softening)
+                publishSnapshot()
+                inserted = true
+            }
+        }
+
+        if (inserted && repository != null) {
+            scope.launch(Dispatchers.IO) {
+                val entity = CelestialBody(
+                    name = name,
+                    mass = mass,
+                    positionX = posX,
+                    positionY = posY,
+                    velocityX = velX,
+                    velocityY = velY,
+                    radius = radius.toDouble(),
+                    colorHex = color.toLong() and 0xFFFFFFFFL,
+                    description = "Custom spawned celestial body."
+                )
+                repository.saveBody(entity)
+            }
+        }
+
+        return inserted
+    }
+
+    /**
      * Releases resources and cancels all background jobs.
      */
     fun stop() {

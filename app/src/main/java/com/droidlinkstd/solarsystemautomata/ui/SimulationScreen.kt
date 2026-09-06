@@ -20,6 +20,7 @@ import com.droidlinkstd.solarsystemautomata.ui.overlay.SimulationControlsOverlay
 import com.droidlinkstd.solarsystemautomata.ui.rendering.OrbitalTrailBuffer
 import com.droidlinkstd.solarsystemautomata.ui.rendering.SimulationCanvas
 import com.droidlinkstd.solarsystemautomata.ui.rendering.StarfieldBuffer
+import com.droidlinkstd.solarsystemautomata.ui.interaction.SlingshotState
 
 /**
  * Top-level screen integrating the simulation engine, canvas renderer, camera viewport,
@@ -41,6 +42,7 @@ fun SimulationScreen(
 ) {
     var currentFps by remember { mutableFloatStateOf(60f) }
     var currentFrameTimeMs by remember { mutableFloatStateOf(16.6f) }
+    val slingshotState = remember { SlingshotState() }
 
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -115,6 +117,20 @@ fun SimulationScreen(
             cameraState = cameraState,
             trailBuffer = trailBuffer,
             starfieldBuffer = starfieldBuffer,
+            slingshotState = slingshotState,
+            onSpawnBody = { name, mass, radius, color, posX, posY, velX, velY ->
+                simulationEngine.spawnBody(
+                    name = name,
+                    mass = mass,
+                    radius = radius,
+                    color = color,
+                    posX = posX,
+                    posY = posY,
+                    velX = velX,
+                    velY = velY,
+                    repository = repository
+                )
+            },
             onFrameMetrics = { fps, frameTimeMs ->
                 currentFps = fps
                 currentFrameTimeMs = frameTimeMs
@@ -127,6 +143,7 @@ fun SimulationScreen(
             cameraState = cameraState,
             fps = currentFps,
             frameTimeMs = currentFrameTimeMs,
+            slingshotState = slingshotState,
             onResetCamera = resetCameraAction
         )
     }

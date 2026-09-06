@@ -1,67 +1,83 @@
 # Solar System Automata - Interactive Sandbox Log
 **Branch**: `feature/interactive-sandbox`  
 **Base**: `main` (Canvas rendering merged)  
-**Status**: Completed & Verified  
+**Status**: Milestone 1 (Slingshot Body Spawner) Completed & Verified  
 **Tracked For**: Gemini Vibe Coding Sync  
 
 ---
 
-## 1. Feature: Screen-Space Hit Testing, Target Reticle, and Camera Follow Mode
-Allows users to tap any celestial body to lock the camera focal point onto it.
+## 1. Feature Map
+1. **Screen-Space Hit Testing**: Tap celestial bodies using touch slop ($36\,\text{px}$) and closest-target resolution.
+2. **Camera Follow Mode**: Locks viewport to a moving body; auto-disengages upon manual drag.
+3. **Targeting Reticle**: Sci-fi cyan circle, outer glow, and compass tick marks on the tracked body.
+4. **Slingshot Body Spawner (Milestone 1)**:
+   - Toggle into `SPAWN` mode.
+   - Choose body preset (*Asteroid*, *Planet*, *Gas Giant*, *Star*).
+   - Drag backward on canvas to stretch slingshot trajectory.
+   - Live trajectory vector arrow and speed readout.
+   - Release to atomically inject the body into the active 64-bit gravitational physics simulation.
 
 ```mermaid
 graph TD
-    A[User Tap Gesture] -->|Screen Coordinates| B[HitTester]
-    B -->|Find Closest Body in Radius| C{Hit Detected?}
-    C -->|Yes| D[CameraState.followBody]
-    C -->|No| E[CameraState.stopFollowing]
-    D -->|Continuous Follow Sync| F[Frame Tick: updateFollow]
-    F -->|Draw Frame| G[Render Sci-Fi Targeting Reticle]
-    D -->|Active Pill| H[SimulationControlsOverlay]
-    I[User Drag / Pan Gesture] -->|Automatic Disengage| E
+    A[User Switches to Spawn Mode] --> B[User Selects Preset: Asteroid / Planet / Giant / Star]
+    B --> C[Touch Drag on Canvas]
+    C -->|startSlingshot| D[Record Origin Screen & World Coordinates]
+    C -->|updateDrag| E[Calculate Launch Vector & Speed]
+    E --> F[Render Trajectory Arrow & Speed in AU/s]
+    G[Touch Release] -->|calculateLaunchVelocity| H[SimulationEngine.spawnBody]
+    H -->|synchronized physicsState| I[Insert Kinematics & Recalculate Accelerations]
+    I -->|publishSnapshot| J[Render Snapshot with New Body]
+    H -.->|Dispatchers.IO| K[Async Save to Room Repository]
 ```
 
 ---
 
-## 2. Invariants & Implementation Details
+## 2. Mathematical Formulations & Invariants
 
-### A. Zero-Allocation Hit Testing (`HitTester.kt`)
-- Projects each body's world coordinate to screen pixels using scalar functions:
-  $$S_x = \text{worldToScreenX}(W_x), \quad S_y = \text{worldToScreenY}(W_y)$$
-- Calculates effective hit radius using visual screen radius clamp and touch slop:
-  $$R_{\text{effective}} = \max(\text{clamp}(R_{\text{world}} \cdot \text{zoom}, 3.5, 45.0), 36.0\,\text{px})$$
-- Computes Euclidean distance squared $\Delta x^2 + \Delta y^2 \le R_{\text{effective}}^2$.
-- Closest body wins in case of overlapping touch radiuses. Zero heap allocations.
+### Slingshot Launch Velocity
+Given origin screen point $(O_x, O_y)$ and current touch position $(D_x, D_y)$:
+$$\Delta x_{\text{screen}} = D_x - O_x, \quad \Delta y_{\text{screen}} = D_y - O_y$$
+$$\Delta x_{\text{world}} = \frac{\Delta x_{\text{screen}}}{\text{zoom}}, \quad \Delta y_{\text{world}} = \frac{\Delta y_{\text{screen}}}{\text{zoom}}$$
+$$\vec{v}_{\text{launch}} = \left(-\Delta x_{\text{world}} \cdot \kappa, \; -\Delta y_{\text{world}} \cdot \kappa\right)$$
+where $\kappa = 0.5$ is the calibrated velocity sensitivity constant.
 
-### B. Camera Follow Mode (`CameraState.kt`)
-- `followedBodyIndex: Int`: Tracked body index (-1 for unpinned free-camera).
-- Synchronized inside `withFrameNanos` in `SimulationCanvas.kt` to ensure camera position is updated *before* the draw pass without mutating state inside `DrawScope`.
-- Panning the screen (`panBy`) or fitting all bounds (`fitBounds`) automatically calls `stopFollowing()`, returning seamless manual control to the user.
+### Slingshot Arrowhead Geometry
+Let launch vector direction angle $\theta = \text{atan2}(-\Delta y, -\Delta x)$, arrowhead length $L = 20\,\text{px}$, and spread half-angle $\alpha = 30^\circ$:
+$$\text{Head}_1 = \left(E_x - L \cos(\theta - \alpha), \; E_y - L \sin(\theta - \alpha)\right)$$
+$$\text{Head}_2 = \left(E_x - L \cos(\theta + \alpha), \; E_y - L \sin(\theta + \alpha)\right)$$
 
-### C. Sci-Fi Targeting Reticle (`SimulationCanvas.kt`)
-- When in follow mode, draws:
-  1. Outer glow halo ring (`reticleGlowPaint`).
-  2. Sharp cyan inner targeting circle (`reticlePaint`).
-  3. Four directional compass tick marks (`reticleCornerPaint`).
-- All paint instances are pre-allocated in `SimulationPaintCache`.
-
-### D. Overlay Follow Indicator (`SimulationControlsOverlay.kt`)
-- Displays an animated glowing chip in the top HUD:
-  `◉ FOLLOWING: <PLANET NAME>  [✕]`
-- Clicking `✕` calls `cameraState.stopFollowing()`.
+### Thread-Safe Atomic Injection
+```kotlin
+synchronized(physicsState) {
+    if (physicsState.count < capacity) {
+        val i = physicsState.count
+        physicsState.posX[i] = posX
+        physicsState.posY[i] = posY
+        physicsState.velX[i] = velX
+        physicsState.velY[i] = velY
+        physicsState.mass[i] = mass
+        physicsState.radius[i] = radius
+        physicsState.color[i] = color
+        physicsState.names[i] = name
+        physicsState.count = i + 1
+        integrator.computeAccelerations(physicsState, g, softening)
+        publishSnapshot()
+    }
+}
+```
 
 ---
 
 ## 3. Unit Tests & Verification
-- `HitTesterTest`:
-  - `returnsNegativeOneOnEmptySnapshot`: Verified empty state safety.
-  - `hitsBodyDirectlyAtCenter`: Verified direct center hit detection.
-  - `hitsBodyWithinTouchSlop`: Verified slop detection.
-  - `returnsNegativeOneWhenTapIsOutsideSlop`: Verified boundary miss.
-  - `selectsClosestBodyWhenMultipleWithinTouchSlop`: Verified closest target resolution.
-- `CameraStateTest`:
-  - `followModeSyncsCameraCenterToFollowedBody`: Verified follow sync.
-  - `panByDisengagesFollowMode`: Verified auto-disengage on manual drag.
-  - `fitBoundsDisengagesFollowMode`: Verified auto-disengage on recenter.
-  - `updateFollowDisengagesWhenBodyOutOfBounds`: Verified out-of-bounds safety.
-- Test Run: `./gradlew test` -> `BUILD SUCCESSFUL`.
+- `SlingshotStateTest`:
+  - `startSlingshotInitializesWorldAndScreenCoordinates`: PASSED.
+  - `calculateLaunchVelocityIsOppositeToDragDirection`: PASSED.
+  - `launchVelocityScalesWithCameraZoom`: PASSED.
+  - `cancelResetsActiveState`: PASSED.
+  - `spawnPresetsHaveCorrectAttributes`: PASSED.
+  - `simulationEngineSpawnsBodyThreadSafely`: PASSED (verified atomic insertion and capacity bound enforcement).
+- `HitTesterTest`: ALL 5 PASSED.
+- `CameraStateTest`: ALL 8 PASSED.
+- `OrbitalIntegratorTest`: ALL PASSED.
+- `./gradlew test`: BUILD SUCCESSFUL.
+- `./gradlew assembleDebug`: BUILD SUCCESSFUL.
