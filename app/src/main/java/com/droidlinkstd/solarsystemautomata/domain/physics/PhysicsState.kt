@@ -29,6 +29,7 @@ class PhysicsState(val capacity: Int = DEFAULT_CAPACITY) {
     val mass: DoubleArray = DoubleArray(capacity)
     val radius: FloatArray = FloatArray(capacity)
     val color: IntArray = IntArray(capacity)
+    val names: Array<String> = Array(capacity) { "" }
 
     /**
      * Hydrates the flat primitive buffers from a list of domain [CelestialBody] models.
@@ -50,6 +51,7 @@ class PhysicsState(val capacity: Int = DEFAULT_CAPACITY) {
             mass[i] = body.mass
             radius[i] = body.radius.toFloat()
             color[i] = body.colorHex.toInt()
+            names[i] = body.name
             i++
         }
 
@@ -64,6 +66,7 @@ class PhysicsState(val capacity: Int = DEFAULT_CAPACITY) {
             Arrays.fill(mass, n, capacity, 0.0)
             Arrays.fill(radius, n, capacity, 0f)
             Arrays.fill(color, n, capacity, 0)
+            Arrays.fill(names, n, capacity, "")
         }
     }
 
@@ -81,6 +84,7 @@ class PhysicsState(val capacity: Int = DEFAULT_CAPACITY) {
         Arrays.fill(mass, 0.0)
         Arrays.fill(radius, 0f)
         Arrays.fill(color, 0)
+        Arrays.fill(names, "")
     }
 
     /**

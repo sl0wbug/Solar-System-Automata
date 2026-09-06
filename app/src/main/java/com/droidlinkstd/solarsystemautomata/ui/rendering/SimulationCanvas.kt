@@ -1,0 +1,218 @@
+package com.droidlinkstd.solarsystemautomata.ui.rendering
+
+import android.graphics.Paint
+import android.graphics.Typeface
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import com.droidlinkstd.solarsystemautomata.domain.physics.SimulationEngine
+import com.droidlinkstd.solarsystemautomata.ui.camera.CameraState
+import kotlinx.coroutines.isActive
+
+/**
+ * Cached native paint objects reused across render frames to prevent heap allocations.
+ */
+class SimulationPaintCache {
+    val bgPaint = Paint().apply {
+        style = Paint.Style.FILL
+        color = 0xFF070A12.toInt() // Deep cosmic dark blue
+    }
+
+    val bodyPaint = Paint().apply {
+        style = Paint.Style.FILL
+        isAntiAlias = true
+    }
+
+    val haloPaint = Paint().apply {
+        style = Paint.Style.FILL
+        isAntiAlias = true
+    }
+
+    val trailPaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2.0f
+        strokeCap = Paint.Cap.ROUND
+        isAntiAlias = true
+    }
+
+    val labelPaint = Paint().apply {
+        style = Paint.Style.FILL
+        isAntiAlias = true
+        textSize = 28f
+        textAlign = Paint.Align.CENTER
+        color = 0xCCFFFFFF.toInt()
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    }
+
+    val labelShadowPaint = Paint().apply {
+        style = Paint.Style.FILL
+        isAntiAlias = true
+        textSize = 28f
+        textAlign = Paint.Align.CENTER
+        color = 0x88000000.toInt()
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    }
+}
+
+/**
+ * Hardware-accelerated Jetpack Compose Canvas renderer.
+ *
+ * ARCHITECTURAL CONSTRAINTS & INVARIANTS:
+ * - Strict Draw-Phase Invalidation: Reading [frameTicker] strictly within [DrawScope]
+ *   bypasses Compose Recomposition and Layout phases at 60/120 FPS.
+ * - Zero Heap Allocations: No object instantiation in the hot draw path.
+ * - Flat Primitive Trails: Historical orbital trajectories rendered from [OrbitalTrailBuffer].
+ * - Screen-space visibility clamping: Distant astronomical bodies remain visible with subtle halos.
+ */
+@Composable
+fun SimulationCanvas(
+    simulationEngine: SimulationEngine,
+    cameraState: CameraState,
+    modifier: Modifier = Modifier,
+    trailBuffer: OrbitalTrailBuffer = remember { OrbitalTrailBuffer() },
+    starfieldBuffer: StarfieldBuffer = remember { StarfieldBuffer() },
+    paintCache: SimulationPaintCache = remember { SimulationPaintCache() },
+    onFrameMetrics: ((fps: Float, frameTimeMs: Float) -> Unit)? = null
+) {
+    // Frame ticker driven by withFrameNanos to synchronize with Android VSYNC
+    var frameTicker by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(simulationEngine) {
+        var lastNanos = System.nanoTime()
+        var frameCount = 0
+        var accumulatedTime = 0.0
+
+        while (isActive) {
+            androidx.compose.runtime.withFrameNanos { nowNanos ->
+                frameTicker = nowNanos
+
+                val dt = (nowNanos - lastNanos) * 1e-9
+                lastNanos = nowNanos
+
+                if (onFrameMetrics != null && dt > 0.0) {
+                    frameCount++
+                    accumulatedTime += dt
+                    if (accumulatedTime >= 0.5) {
+                        val fps = (frameCount / accumulatedTime).toFloat()
+                        val frameMs = ((accumulatedTime / frameCount) * 1000.0).toFloat()
+                        onFrameMetrics(fps, frameMs)
+                        frameCount = 0
+                        accumulatedTime = 0.0
+                    }
+                }
+            }
+        }
+    }
+
+    Canvas(
+        modifier = modifier
+            .fillMaxSize()
+            .onSizeChanged { size ->
+                cameraState.updateViewport(size.width.toFloat(), size.height.toFloat())
+            }
+            .pointerInput(cameraState) {
+                detectTransformGestures { centroid, pan, zoom, _ ->
+                    cameraState.panBy(pan.x, pan.y)
+                    cameraState.zoomBy(centroid, zoom)
+                }
+            }
+    ) {
+        // Register draw-phase dependency on frameTicker without triggering recomposition
+        val _tick = frameTicker
+
+        val nativeCanvas = drawContext.canvas.nativeCanvas
+        val canvasWidth = size.width
+        val canvasHeight = size.height
+
+        if (canvasWidth <= 0f || canvasHeight <= 0f) return@Canvas
+
+        // 1. Deep-space background fill
+        nativeCanvas.drawRect(0f, 0f, canvasWidth, canvasHeight, paintCache.bgPaint)
+
+        // 2. Parallax starfield
+        starfieldBuffer.draw(nativeCanvas, canvasWidth, canvasHeight, cameraState)
+
+        // Fetch latest snapshot published by the background simulation thread
+        val snapshot = simulationEngine.getRenderSnapshot()
+        val count = snapshot.count
+        if (count <= 0) return@Canvas
+
+        // 3. Dynamic distance threshold for trail sampling (2 screen pixels squared)
+        val zoomD = cameraState.zoom.toDouble()
+        val minDistanceThresholdSq = if (zoomD > 1e-12) 4.0 / (zoomD * zoomD) else 0.0
+        trailBuffer.sample(snapshot, minDistanceThresholdSq)
+
+        // 4. Draw orbital trails with progressive alpha fade
+        var bodyIndex = 0
+        while (bodyIndex < count) {
+            val bodyColor = snapshot.color[bodyIndex]
+            val r = (bodyColor shr 16) and 0xFF
+            val g = (bodyColor shr 8) and 0xFF
+            val b = bodyColor and 0xFF
+
+            trailBuffer.forEachTrailSegment(bodyIndex) { x1, y1, x2, y2, progress ->
+                val sx1 = cameraState.worldToScreenX(x1)
+                val sy1 = cameraState.worldToScreenY(y1)
+                val sx2 = cameraState.worldToScreenX(x2)
+                val sy2 = cameraState.worldToScreenY(y2)
+
+                // Alpha fades from near transparent (tail) to solid (head)
+                val alpha = (progress * 190).toInt().coerceIn(10, 220)
+                paintCache.trailPaint.setARGB(alpha, r, g, b)
+
+                nativeCanvas.drawLine(sx1, sy1, sx2, sy2, paintCache.trailPaint)
+            }
+            bodyIndex++
+        }
+
+        // 5. Draw celestial bodies (spheres, halos, and names)
+        bodyIndex = 0
+        while (bodyIndex < count) {
+            val wx = snapshot.posX[bodyIndex]
+            val wy = snapshot.posY[bodyIndex]
+            val sx = cameraState.worldToScreenX(wx)
+            val sy = cameraState.worldToScreenY(wy)
+
+            // Cull bodies completely outside the screen viewport (with margin)
+            if (sx >= -100f && sx <= canvasWidth + 100f && sy >= -100f && sy <= canvasHeight + 100f) {
+                val rawRadiusPx = snapshot.radius[bodyIndex] * cameraState.zoom
+                // Clamp screen radius to keep distant bodies visible
+                val radiusPx = rawRadiusPx.coerceIn(3.5f, 45f)
+
+                val bodyColor = snapshot.color[bodyIndex]
+                val r = (bodyColor shr 16) and 0xFF
+                val g = (bodyColor shr 8) and 0xFF
+                val b = bodyColor and 0xFF
+
+                // Draw outer atmospheric/gravitational glow
+                paintCache.haloPaint.setARGB(45, r, g, b)
+                nativeCanvas.drawCircle(sx, sy, radiusPx * 1.6f, paintCache.haloPaint)
+
+                // Draw solid celestial sphere
+                paintCache.bodyPaint.color = bodyColor
+                nativeCanvas.drawCircle(sx, sy, radiusPx, paintCache.bodyPaint)
+
+                // Draw name label below the body
+                val name = snapshot.names[bodyIndex]
+                if (name.isNotEmpty()) {
+                    val labelY = sy + radiusPx + 22f
+                    // Drop shadow for legibility over trails/stars
+                    nativeCanvas.drawText(name, sx + 1f, labelY + 1f, paintCache.labelShadowPaint)
+                    nativeCanvas.drawText(name, sx, labelY, paintCache.labelPaint)
+                }
+            }
+            bodyIndex++
+        }
+    }
+}

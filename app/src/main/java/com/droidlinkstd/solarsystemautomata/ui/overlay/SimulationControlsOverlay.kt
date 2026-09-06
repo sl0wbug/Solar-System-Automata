@@ -1,0 +1,297 @@
+package com.droidlinkstd.solarsystemautomata.ui.overlay
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.droidlinkstd.solarsystemautomata.domain.physics.SimulationEngine
+import com.droidlinkstd.solarsystemautomata.ui.camera.CameraState
+
+/**
+ * Lightweight Compose UI floating over the Canvas in a Box.
+ *
+ * ARCHITECTURAL CONSTRAINTS:
+ * - Recomposition Scope Isolation: Encapsulated in its own scope so user interactions
+ *   do not trigger Canvas redraws or Recomposition cycles.
+ * - Controls simulation loop (play/pause, speed multipliers, single stepping, camera reset).
+ * - Displays real-time telemetry HUD (FPS, frame time, tracked body count).
+ */
+@Composable
+fun SimulationControlsOverlay(
+    simulationEngine: SimulationEngine,
+    cameraState: CameraState,
+    fps: Float,
+    frameTimeMs: Float,
+    onResetCamera: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var isRunning by remember { mutableStateOf(simulationEngine.isRunning) }
+    var currentSpeed by remember { mutableDoubleStateOf(simulationEngine.speedMultiplier) }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        // --- Top Telemetry HUD ---
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // System info chip
+            GlassChip(
+                text = "SOLAR SYSTEM",
+                accentColor = Color(0xFF60A5FA)
+            )
+
+            // Diagnostics HUD (FPS & Frame Time)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassChip(
+                    text = "${simulationEngine.getRenderSnapshot().count} BODIES",
+                    accentColor = Color(0xFF34D399)
+                )
+                GlassChip(
+                    text = "${fps.toInt()} FPS · ${String.format("%.1f", frameTimeMs)}ms",
+                    accentColor = if (fps >= 55f) Color(0xFF38BDF8) else Color(0xFFFBBF24)
+                )
+            }
+        }
+
+        // --- Bottom Control Deck ---
+        Surface(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = Color(0xE60A0E18),
+            tonalElevation = 8.dp,
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0x3360A5FA),
+                        Color(0x111E293B)
+                    )
+                )
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Top control buttons row (Play/Pause, Step, Reset Camera)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Play / Pause Button
+                    ControlButton(
+                        text = if (isRunning) "⏸ PAUSE" else "▶ PLAY",
+                        isActive = isRunning,
+                        activeColor = Color(0xFF3B82F6),
+                        onClick = {
+                            if (isRunning) {
+                                simulationEngine.pause()
+                                isRunning = false
+                            } else {
+                                simulationEngine.start()
+                                isRunning = true
+                            }
+                        }
+                    )
+
+                    // Single Step (visible when paused)
+                    AnimatedVisibility(
+                        visible = !isRunning,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        ControlButton(
+                            text = "⏭ STEP",
+                            isActive = false,
+                            activeColor = Color(0xFF8B5CF6),
+                            onClick = {
+                                simulationEngine.stepOnce()
+                            }
+                        )
+                    }
+
+                    // Reset / Fit Camera Button
+                    ControlButton(
+                        text = "⤢ FIT ALL",
+                        isActive = false,
+                        activeColor = Color(0xFF10B981),
+                        onClick = onResetCamera
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Speed Multiplier row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "WARP SPEED",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF94A3B8),
+                        letterSpacing = 1.sp
+                    )
+
+                    Text(
+                        text = "${String.format("%.1f", currentSpeed)}x",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color(0xFF60A5FA)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Speed Quick Selection Chips
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(0.25, 1.0, 5.0, 20.0, 100.0).forEach { speed ->
+                        val isSelected = currentSpeed == speed
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (isSelected) Color(0xFF2563EB) else Color(0xFF1E293B)
+                                )
+                                .clickable {
+                                    simulationEngine.setSpeedMultiplier(speed)
+                                    currentSpeed = speed
+                                }
+                                .padding(vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "${speed.toInt().let { if (it > 0) it else speed }}x",
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) Color.White else Color(0xFF94A3B8)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GlassChip(
+    text: String,
+    accentColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xCC0B0F19))
+            .border(1.dp, accentColor.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(accentColor)
+            )
+            Text(
+                text = text,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = FontFamily.Monospace,
+                color = Color(0xFFE2E8F0),
+                letterSpacing = 0.5.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun ControlButton(
+    text: String,
+    isActive: Boolean,
+    activeColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (isActive) activeColor.copy(alpha = 0.25f) else Color(0xFF1E293B))
+            .border(
+                1.dp,
+                if (isActive) activeColor else Color(0xFF334155),
+                RoundedCornerShape(12.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (isActive) Color.White else Color(0xFFCBD5E1),
+            letterSpacing = 0.5.sp
+        )
+    }
+}
