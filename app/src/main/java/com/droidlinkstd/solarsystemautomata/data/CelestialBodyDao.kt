@@ -39,6 +39,9 @@ interface CelestialBodyDao {
     @Delete
     suspend fun deleteBody(body: Planet)
 
+    @Query("DELETE FROM planets_table WHERE name = :name")
+    suspend fun deleteByName(name: String)
+
     @Query("DELETE FROM planets_table")
     suspend fun deleteAllBodies()
 
@@ -81,7 +84,11 @@ interface CelestialBodyDao {
             }
 
             override suspend fun deleteBody(body: Planet) {
-                // Optional fallback when deleting individual planet
+                planetDao.deleteByName(body.name)
+            }
+
+            override suspend fun deleteByName(name: String) {
+                planetDao.deleteByName(name)
             }
 
             override suspend fun deleteAllBodies() {

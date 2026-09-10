@@ -101,6 +101,52 @@ class OrbitalTrailBuffer(
     }
 
     /**
+     * Synchronizes trail buffer storage with physics state Swap-and-Pop compaction.
+     * Moves historical points from [swappedIndex] into [absorbedIndex] and zeroes [swappedIndex].
+     * Zero heap allocation.
+     */
+    fun swapAndPop(absorbedIndex: Int, swappedIndex: Int) {
+        if (absorbedIndex < 0 || absorbedIndex >= maxBodies ||
+            swappedIndex < 0 || swappedIndex >= maxBodies
+        ) return
+
+        if (absorbedIndex == swappedIndex) {
+            // Simply clear the absorbed slot
+            counts[absorbedIndex] = 0
+            headIndices[absorbedIndex] = 0
+            hasSampled[absorbedIndex] = false
+            lastSampleX[absorbedIndex] = 0.0
+            lastSampleY[absorbedIndex] = 0.0
+            return
+        }
+
+        // Copy tracking metrics from swappedIndex into absorbedIndex
+        counts[absorbedIndex] = counts[swappedIndex]
+        headIndices[absorbedIndex] = headIndices[swappedIndex]
+        hasSampled[absorbedIndex] = hasSampled[swappedIndex]
+        lastSampleX[absorbedIndex] = lastSampleX[swappedIndex]
+        lastSampleY[absorbedIndex] = lastSampleY[swappedIndex]
+
+        val srcBase = swappedIndex * trailCapacity
+        val dstBase = absorbedIndex * trailCapacity
+        var k = 0
+        while (k < trailCapacity) {
+            posX[dstBase + k] = posX[srcBase + k]
+            posY[dstBase + k] = posY[srcBase + k]
+            posX[srcBase + k] = 0.0
+            posY[srcBase + k] = 0.0
+            k++
+        }
+
+        // Clear the vacated slot
+        counts[swappedIndex] = 0
+        headIndices[swappedIndex] = 0
+        hasSampled[swappedIndex] = false
+        lastSampleX[swappedIndex] = 0.0
+        lastSampleY[swappedIndex] = 0.0
+    }
+
+    /**
      * Zero-allocation inline iteration over all consecutive line segments for [bodyIndex],
      * ordered chronologically from oldest to newest point.
      *

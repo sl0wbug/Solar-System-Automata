@@ -148,4 +148,153 @@ class OrbitalIntegrator {
             i++
         }
     }
+
+    /**
+     * Functional callback interface for collision events.
+     * Uses primitive scalar parameters to eliminate heap object allocation.
+     */
+    fun interface CollisionListener {
+        fun onCollision(
+            absorbedIndex: Int,
+            swappedIndex: Int,
+            absorbedName: String,
+            impactX: Double,
+            impactY: Double,
+            impactRadiusPx: Float,
+            impactColor: Int
+        )
+    }
+
+    /**
+     * Detects pairwise physical contact between celestial bodies and executes
+     * perfectly inelastic collisions with zero-allocation Swap-and-Pop compaction.
+     *
+     * Invariants:
+     * - Conservation of Total Mass: M_new = m_w + m_a
+     * - Conservation of Linear Momentum: v_new = (m_w * v_w + m_a * v_a) / M_new
+     * - Barycentric Position: r_new = (m_w * r_w + m_a * r_a) / M_new
+     * - Conservation of Volume: R_new = cbrt(R_w^3 + R_a^3)
+     * - Swap-and-Pop: Absorbed body is replaced by body at count - 1 in O(1) time.
+     *
+     * @return true if at least one collision occurred, false otherwise.
+     */
+    fun resolveCollisions(
+        state: PhysicsState,
+        listener: CollisionListener? = null
+    ): Boolean {
+        var collisionOccurred = false
+        var i = 0
+
+        while (i < state.count) {
+            var j = i + 1
+            while (j < state.count) {
+                val dx = state.posX[j] - state.posX[i]
+                val dy = state.posY[j] - state.posY[i]
+                val distSq = dx * dx + dy * dy
+
+                val collisionRadius = (state.radius[i] + state.radius[j]) * EARTH_RADIUS_TO_AU
+                val collisionRadiusSq = collisionRadius * collisionRadius
+
+                if (distSq <= collisionRadiusSq) {
+                    collisionOccurred = true
+
+                    // Determine winner (larger mass) and absorbed (smaller mass)
+                    val winnerIdx: Int
+                    val absorbedIdx: Int
+                    if (state.mass[i] >= state.mass[j]) {
+                        winnerIdx = i
+                        absorbedIdx = j
+                    } else {
+                        winnerIdx = j
+                        absorbedIdx = i
+                    }
+
+                    val mw = state.mass[winnerIdx]
+                    val ma = state.mass[absorbedIdx]
+                    val mNew = mw + ma
+
+                    // Conservation of linear momentum
+                    val vxNew = (mw * state.velX[winnerIdx] + ma * state.velX[absorbedIdx]) / mNew
+                    val vyNew = (mw * state.velY[winnerIdx] + ma * state.velY[absorbedIdx]) / mNew
+
+                    // Center of mass (barycenter) position
+                    val xNew = (mw * state.posX[winnerIdx] + ma * state.posX[absorbedIdx]) / mNew
+                    val yNew = (mw * state.posY[winnerIdx] + ma * state.posY[absorbedIdx]) / mNew
+
+                    // Volume conservation: R_new = cbrt(R_w^3 + R_a^3)
+                    val rw = state.radius[winnerIdx].toDouble()
+                    val ra = state.radius[absorbedIdx].toDouble()
+                    val rNew = Math.cbrt(rw * rw * rw + ra * ra * ra).toFloat()
+
+                    val absorbedName = state.names[absorbedIdx]
+                    val impactColor = state.color[absorbedIdx]
+                    val impactRadiusPx = (state.radius[winnerIdx] + state.radius[absorbedIdx])
+
+                    // Apply merged state to winner
+                    state.mass[winnerIdx] = mNew
+                    state.velX[winnerIdx] = vxNew
+                    state.velY[winnerIdx] = vyNew
+                    state.posX[winnerIdx] = xNew
+                    state.posY[winnerIdx] = yNew
+                    state.radius[winnerIdx] = rNew
+
+                    // Swap-and-Pop compaction: move last active body (count - 1) into absorbedIdx slot
+                    val lastIdx = state.count - 1
+
+                    // Notify listener of collision before modifying the slots
+                    listener?.onCollision(
+                        absorbedIndex = absorbedIdx,
+                        swappedIndex = lastIdx,
+                        absorbedName = absorbedName,
+                        impactX = xNew,
+                        impactY = yNew,
+                        impactRadiusPx = impactRadiusPx,
+                        impactColor = impactColor
+                    )
+
+                    if (absorbedIdx != lastIdx) {
+                        state.posX[absorbedIdx] = state.posX[lastIdx]
+                        state.posY[absorbedIdx] = state.posY[lastIdx]
+                        state.velX[absorbedIdx] = state.velX[lastIdx]
+                        state.velY[absorbedIdx] = state.velY[lastIdx]
+                        state.accX[absorbedIdx] = state.accX[lastIdx]
+                        state.accY[absorbedIdx] = state.accY[lastIdx]
+                        state.mass[absorbedIdx] = state.mass[lastIdx]
+                        state.radius[absorbedIdx] = state.radius[lastIdx]
+                        state.color[absorbedIdx] = state.color[lastIdx]
+                        state.names[absorbedIdx] = state.names[lastIdx]
+                    }
+
+                    // Zero out the vacated last slot
+                    state.posX[lastIdx] = 0.0
+                    state.posY[lastIdx] = 0.0
+                    state.velX[lastIdx] = 0.0
+                    state.velY[lastIdx] = 0.0
+                    state.accX[lastIdx] = 0.0
+                    state.accY[lastIdx] = 0.0
+                    state.mass[lastIdx] = 0.0
+                    state.radius[lastIdx] = 0f
+                    state.color[lastIdx] = 0
+                    state.names[lastIdx] = ""
+
+                    state.count--
+
+                    // Adjust loop indices
+                    if (absorbedIdx == i) {
+                        j = i + 1
+                    }
+                    // If absorbedIdx == j, j remains the same to check the newly swapped body at slot j
+                } else {
+                    j++
+                }
+            }
+            i++
+        }
+
+        return collisionOccurred
+    }
+
+    companion object {
+        const val EARTH_RADIUS_TO_AU: Double = 4.25875e-5 // 1 R_earth in AU
+    }
 }

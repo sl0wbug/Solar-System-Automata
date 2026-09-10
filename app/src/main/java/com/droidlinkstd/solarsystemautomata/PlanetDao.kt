@@ -18,6 +18,9 @@ interface PlanetDao {
     @Query("SELECT * FROM planets_table ORDER BY orbitDistance ASC")
     fun getAllPlanets(): Flow<List<Planet>>
 
+    @Query("DELETE FROM planets_table WHERE name = :name")
+    suspend fun deleteByName(name: String)
+
     @Query("DELETE FROM planets_table")
     suspend fun deleteAllPlanets()
 }

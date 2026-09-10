@@ -18,6 +18,7 @@ import com.droidlinkstd.solarsystemautomata.domain.physics.SimulationEngine
 import com.droidlinkstd.solarsystemautomata.ui.camera.CameraState
 import com.droidlinkstd.solarsystemautomata.ui.overlay.SimulationControlsOverlay
 import com.droidlinkstd.solarsystemautomata.ui.rendering.OrbitalTrailBuffer
+import com.droidlinkstd.solarsystemautomata.ui.rendering.ShockwaveBuffer
 import com.droidlinkstd.solarsystemautomata.ui.rendering.SimulationCanvas
 import com.droidlinkstd.solarsystemautomata.ui.rendering.StarfieldBuffer
 import com.droidlinkstd.solarsystemautomata.ui.interaction.SlingshotState
@@ -38,7 +39,8 @@ fun SimulationScreen(
     simulationEngine: SimulationEngine = remember { SimulationEngine() },
     cameraState: CameraState = remember { CameraState() },
     trailBuffer: OrbitalTrailBuffer = remember { OrbitalTrailBuffer() },
-    starfieldBuffer: StarfieldBuffer = remember { StarfieldBuffer() }
+    starfieldBuffer: StarfieldBuffer = remember { StarfieldBuffer() },
+    shockwaveBuffer: ShockwaveBuffer = remember { ShockwaveBuffer() }
 ) {
     var currentFps by remember { mutableFloatStateOf(60f) }
     var currentFrameTimeMs by remember { mutableFloatStateOf(16.6f) }
@@ -117,6 +119,7 @@ fun SimulationScreen(
             cameraState = cameraState,
             trailBuffer = trailBuffer,
             starfieldBuffer = starfieldBuffer,
+            shockwaveBuffer = shockwaveBuffer,
             slingshotState = slingshotState,
             onSpawnBody = { name, mass, radius, color, posX, posY, velX, velY ->
                 simulationEngine.spawnBody(
