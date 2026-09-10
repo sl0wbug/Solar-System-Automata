@@ -94,6 +94,9 @@ class SimulationEngine(
     private val scope: CoroutineScope
         get() = externalScope ?: internalScope
 
+    var repository: CelestialBodyRepository? = null
+    var collisionListener: OrbitalIntegrator.CollisionListener? = null
+
     /**
      * Hydrates the physics state from a list of domain [CelestialBody] models
      * and publishes an initial render snapshot.
@@ -115,6 +118,7 @@ class SimulationEngine(
         useRealScale: Boolean = true,
         includeCentralSun: Boolean = true
     ) {
+        this.repository = repository
         val bodies = repository.getInitialPhysicsBodies(
             presetId = presetId,
             useRealScale = useRealScale,
@@ -151,6 +155,18 @@ class SimulationEngine(
         speedMultiplier = if (multiplier < 0.0) 0.0 else multiplier
     }
 
+    private val internalCollisionHandler = OrbitalIntegrator.CollisionListener { absorbedIndex, swappedIndex, absorbedName, impactX, impactY, impactRadiusPx, impactColor ->
+        collisionListener?.onCollision(
+            absorbedIndex, swappedIndex, absorbedName, impactX, impactY, impactRadiusPx, impactColor
+        )
+        val repo = repository
+        if (repo != null && absorbedName.isNotEmpty()) {
+            scope.launch(Dispatchers.IO) {
+                repo.deleteBodyByName(absorbedName)
+            }
+        }
+    }
+
     /**
      * Executes a single integration step and publishes a snapshot.
      * Useful for manual stepping or deterministic testing.
@@ -158,6 +174,9 @@ class SimulationEngine(
     fun stepOnce(dt: Double = fixedDt) {
         synchronized(physicsState) {
             integrator.step(physicsState, dt, g, softening)
+            if (integrator.resolveCollisions(physicsState, internalCollisionHandler)) {
+                integrator.computeAccelerations(physicsState, g, softening)
+            }
             publishSnapshot()
         }
     }
@@ -210,20 +229,23 @@ class SimulationEngine(
             }
         }
 
-        if (inserted && repository != null) {
-            scope.launch(Dispatchers.IO) {
-                val entity = CelestialBody(
-                    name = name,
-                    mass = mass,
-                    positionX = posX,
-                    positionY = posY,
-                    velocityX = velX,
-                    velocityY = velY,
-                    radius = radius.toDouble(),
-                    colorHex = color.toLong() and 0xFFFFFFFFL,
-                    description = "Custom spawned celestial body."
-                )
-                repository.saveBody(entity)
+        if (inserted) {
+            val targetRepo = repository ?: this.repository
+            if (targetRepo != null) {
+                scope.launch(Dispatchers.IO) {
+                    val entity = CelestialBody(
+                        name = name,
+                        mass = mass,
+                        positionX = posX,
+                        positionY = posY,
+                        velocityX = velX,
+                        velocityY = velY,
+                        radius = radius.toDouble(),
+                        colorHex = color.toLong() and 0xFFFFFFFFL,
+                        description = "Custom spawned celestial body."
+                    )
+                    targetRepo.saveBody(entity)
+                }
             }
         }
 
@@ -257,9 +279,16 @@ class SimulationEngine(
             val dt = fixedDt
             if (dt > 0.0) {
                 synchronized(physicsState) {
+                    var anyCollision = false
                     while (accumulator >= dt && isRunningFlag.get()) {
                         integrator.step(physicsState, dt, g, softening)
                         accumulator -= dt
+                        if (integrator.resolveCollisions(physicsState, internalCollisionHandler)) {
+                            anyCollision = true
+                        }
+                    }
+                    if (anyCollision) {
+                        integrator.computeAccelerations(physicsState, g, softening)
                     }
                     publishSnapshot()
                 }

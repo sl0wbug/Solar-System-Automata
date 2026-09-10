@@ -80,6 +80,7 @@ class CelestialBodyTest {
             }
             override suspend fun updateBody(body: Planet) {}
             override suspend fun deleteBody(body: Planet) { list.remove(body) }
+            override suspend fun deleteByName(name: String) { list.removeAll { it.name == name } }
             override suspend fun deleteAllBodies() { list.clear() }
         }
 
@@ -115,6 +116,7 @@ class CelestialBodyTest {
             override suspend fun insertBodies(bodies: List<Planet>) = listOf(1L)
             override suspend fun updateBody(body: Planet) {}
             override suspend fun deleteBody(body: Planet) {}
+            override suspend fun deleteByName(name: String) {}
             override suspend fun deleteAllBodies() {}
         }
 

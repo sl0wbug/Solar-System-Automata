@@ -48,6 +48,11 @@ interface CelestialBodyRepository {
      */
     suspend fun deleteBody(body: CelestialBody)
 
+    /**
+     * Deletes a celestial body configuration by its unique name.
+     */
+    suspend fun deleteBodyByName(name: String)
+
     companion object {
         const val PRESET_SOLAR_SYSTEM = "SOLAR_SYSTEM"
         const val SUN_ID = -1
@@ -119,5 +124,9 @@ class CelestialBodyRepositoryImpl(
 
     override suspend fun deleteBody(body: CelestialBody) {
         dao.deleteBody(body.toEntity())
+    }
+
+    override suspend fun deleteBodyByName(name: String) {
+        dao.deleteByName(name)
     }
 }

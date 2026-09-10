@@ -304,6 +304,7 @@ class OrbitalIntegratorTest {
             override suspend fun insertBodies(bodies: List<Planet>) = listOf(1L)
             override suspend fun updateBody(body: Planet) {}
             override suspend fun deleteBody(body: Planet) {}
+            override suspend fun deleteByName(name: String) {}
             override suspend fun deleteAllBodies() {}
         }
         val repository: CelestialBodyRepository = CelestialBodyRepositoryImpl(fakeDao)

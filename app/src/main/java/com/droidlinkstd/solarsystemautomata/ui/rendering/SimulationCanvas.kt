@@ -118,6 +118,13 @@ class SimulationPaintCache {
         color = 0xFFFDE68A.toInt() // Light amber
         typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
     }
+
+    val shockwavePaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3.0f
+        strokeCap = Paint.Cap.ROUND
+        isAntiAlias = true
+    }
 }
 
 /**
@@ -137,6 +144,7 @@ fun SimulationCanvas(
     modifier: Modifier = Modifier,
     trailBuffer: OrbitalTrailBuffer = remember { OrbitalTrailBuffer() },
     starfieldBuffer: StarfieldBuffer = remember { StarfieldBuffer() },
+    shockwaveBuffer: ShockwaveBuffer = remember { ShockwaveBuffer() },
     paintCache: SimulationPaintCache = remember { SimulationPaintCache() },
     slingshotState: SlingshotState = remember { SlingshotState() },
     onSpawnBody: ((name: String, mass: Double, radius: Float, color: Int, posX: Double, posY: Double, velX: Double, velY: Double) -> Unit)? = null,
@@ -145,7 +153,21 @@ fun SimulationCanvas(
     // Frame ticker driven by withFrameNanos to synchronize with Android VSYNC
     var frameTicker by remember { mutableLongStateOf(0L) }
 
-    LaunchedEffect(simulationEngine) {
+    LaunchedEffect(simulationEngine, shockwaveBuffer, cameraState, trailBuffer) {
+        simulationEngine.collisionListener = com.droidlinkstd.solarsystemautomata.domain.physics.OrbitalIntegrator.CollisionListener { absorbedIndex, swappedIndex, _, impactX, impactY, impactRadiusPx, impactColor ->
+            shockwaveBuffer.triggerShockwave(impactX, impactY, impactRadiusPx, impactColor)
+            if (cameraState.isFollowing) {
+                if (cameraState.followedBodyIndex == absorbedIndex) {
+                    cameraState.stopFollowing()
+                } else if (cameraState.followedBodyIndex == swappedIndex) {
+                    cameraState.followBody(absorbedIndex)
+                }
+            }
+            trailBuffer.swapAndPop(absorbedIndex, swappedIndex)
+        }
+    }
+
+    LaunchedEffect(simulationEngine, shockwaveBuffer) {
         var lastNanos = System.nanoTime()
         var frameCount = 0
         var accumulatedTime = 0.0
@@ -160,6 +182,8 @@ fun SimulationCanvas(
 
                 val dt = (nowNanos - lastNanos) * 1e-9
                 lastNanos = nowNanos
+
+                shockwaveBuffer.update(dt.toFloat())
 
                 if (onFrameMetrics != null && dt > 0.0) {
                     frameCount++
@@ -306,6 +330,9 @@ fun SimulationCanvas(
             }
             bodyIndex++
         }
+
+        // 4.5. Draw active impact shockwaves beneath celestial bodies
+        shockwaveBuffer.draw(nativeCanvas, cameraState, paintCache.shockwavePaint, canvasWidth, canvasHeight)
 
         // 5. Draw celestial bodies (spheres, halos, and names)
         bodyIndex = 0
