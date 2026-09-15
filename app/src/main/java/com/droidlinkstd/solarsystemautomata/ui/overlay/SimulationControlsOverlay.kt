@@ -3,6 +3,10 @@ package com.droidlinkstd.solarsystemautomata.ui.overlay
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import com.droidlinkstd.solarsystemautomata.domain.physics.ScenarioPreset
+import com.droidlinkstd.solarsystemautomata.domain.physics.ScenarioPresets
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -62,10 +66,13 @@ fun SimulationControlsOverlay(
     frameTimeMs: Float,
     onResetCamera: () -> Unit,
     modifier: Modifier = Modifier,
-    slingshotState: SlingshotState = remember { SlingshotState() }
+    slingshotState: SlingshotState = remember { SlingshotState() },
+    selectedPreset: ScenarioPreset = ScenarioPresets.SolarSystem,
+    onSelectPreset: (ScenarioPreset) -> Unit = {}
 ) {
     var isRunning by remember { mutableStateOf(simulationEngine.isRunning) }
     var currentSpeed by remember { mutableDoubleStateOf(simulationEngine.speedMultiplier) }
+    var isPresetPickerOpen by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -85,10 +92,42 @@ fun SimulationControlsOverlay(
             ) {
                 // System info chip & Mode switcher
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    GlassChip(
-                        text = "SOLAR SYSTEM",
-                        accentColor = Color(0xFF60A5FA)
-                    )
+                    val currentAccent = Color(selectedPreset.accentColorHex)
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xCC0B0F19))
+                            .border(
+                                1.dp,
+                                if (isPresetPickerOpen) currentAccent else currentAccent.copy(alpha = 0.5f),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .clickable { isPresetPickerOpen = !isPresetPickerOpen }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = selectedPreset.iconEmoji,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                text = selectedPreset.title.uppercase(),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = currentAccent,
+                                letterSpacing = 0.5.sp
+                            )
+                            Text(
+                                text = if (isPresetPickerOpen) "▲" else "▼",
+                                fontSize = 9.sp,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
 
                     // Spawn / Navigate Mode Toggle
                     Box(
@@ -131,6 +170,106 @@ fun SimulationControlsOverlay(
                         text = "${fps.toInt()} FPS · ${String.format("%.1f", frameTimeMs)}ms",
                         accentColor = if (fps >= 55f) Color(0xFF38BDF8) else Color(0xFFFBBF24)
                     )
+                }
+            }
+
+            // Scenario Presets Dropdown Picker
+            AnimatedVisibility(
+                visible = isPresetPickerOpen,
+                enter = fadeIn() + slideInVertically(),
+                exit = fadeOut() + slideOutVertically(),
+                modifier = Modifier.padding(top = 8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color(0xF00F172A),
+                                    Color(0xF0020617)
+                                )
+                            )
+                        )
+                        .border(1.dp, Color(0x3338BDF8), RoundedCornerShape(16.dp))
+                        .padding(12.dp)
+                ) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.width(320.dp)
+                    ) {
+                        Text(
+                            text = "CELESTIAL PRESETS",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color(0xFF94A3B8),
+                            letterSpacing = 1.sp
+                        )
+
+                        ScenarioPresets.ALL_PRESETS.forEach { preset ->
+                            val isCurrent = preset.id == selectedPreset.id
+                            val accentColor = Color(preset.accentColorHex)
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        if (isCurrent) accentColor.copy(alpha = 0.15f)
+                                        else Color(0x331E293B)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isCurrent) accentColor else Color(0x22475569),
+                                        RoundedCornerShape(10.dp)
+                                    )
+                                    .clickable {
+                                        isPresetPickerOpen = false
+                                        onSelectPreset(preset)
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text(
+                                        text = preset.iconEmoji,
+                                        fontSize = 18.sp
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                text = preset.title,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = if (isCurrent) accentColor else Color.White
+                                            )
+                                            if (isCurrent) {
+                                                Text(
+                                                    text = "ACTIVE",
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    color = accentColor
+                                                )
+                                            }
+                                        }
+                                        Text(
+                                            text = preset.subtitle,
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF94A3B8)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

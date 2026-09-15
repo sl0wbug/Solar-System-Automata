@@ -127,6 +127,29 @@ class SimulationEngine(
         loadBodies(bodies)
     }
 
+    @Volatile
+    var currentPreset: ScenarioPreset = ScenarioPresets.SolarSystem
+        private set
+
+    /**
+     * Atomically loads a predefined scenario preset into the active physics state.
+     * In-place state swap with zero heap allocations in the hot loop.
+     * Updates G, softening, and speed, calculates initial accelerations,
+     * and publishes frame 0 snapshot immediately.
+     */
+    fun loadScenario(preset: ScenarioPreset) {
+        synchronized(physicsState) {
+            currentPreset = preset
+            g = preset.g
+            softening = preset.softening
+            speedMultiplier = preset.defaultSpeed
+            val bodies = preset.createBodies()
+            physicsState.loadFromDomain(bodies)
+            integrator.computeAccelerations(physicsState, g, softening)
+            publishSnapshot()
+        }
+    }
+
     /**
      * Starts or resumes the background simulation loop.
      */
