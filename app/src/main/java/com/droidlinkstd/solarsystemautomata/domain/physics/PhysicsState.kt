@@ -88,6 +88,14 @@ class PhysicsState(val capacity: Int = DEFAULT_CAPACITY) {
     }
 
     /**
+     * Resets the active count and zeroes all internal buffers.
+     * In-place zero-allocation reset.
+     */
+    fun reset() {
+        clear()
+    }
+
+    /**
      * Calculates total kinetic energy: K = 1/2 * sum(m_i * (vx_i^2 + vy_i^2)).
      * Executes with zero heap allocations.
      */

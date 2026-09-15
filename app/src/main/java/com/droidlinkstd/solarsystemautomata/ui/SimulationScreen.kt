@@ -7,6 +7,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -14,6 +15,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.droidlinkstd.solarsystemautomata.data.CelestialBodyRepository
+import com.droidlinkstd.solarsystemautomata.domain.physics.ScenarioPreset
+import com.droidlinkstd.solarsystemautomata.domain.physics.ScenarioPresets
 import com.droidlinkstd.solarsystemautomata.domain.physics.SimulationEngine
 import com.droidlinkstd.solarsystemautomata.ui.camera.CameraState
 import com.droidlinkstd.solarsystemautomata.ui.overlay.SimulationControlsOverlay
@@ -44,6 +47,7 @@ fun SimulationScreen(
 ) {
     var currentFps by remember { mutableFloatStateOf(60f) }
     var currentFrameTimeMs by remember { mutableFloatStateOf(16.6f) }
+    var currentPreset by remember { mutableStateOf(ScenarioPresets.SolarSystem) }
     val slingshotState = remember { SlingshotState() }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -102,12 +106,19 @@ fun SimulationScreen(
         }
     }
 
-    // Hydrate simulation state from database repository on initial load
-    LaunchedEffect(repository, simulationEngine) {
-        simulationEngine.loadFromRepository(
-            repository = repository,
-            presetId = CelestialBodyRepository.PRESET_SOLAR_SYSTEM
-        )
+    // Helper to switch scenario presets cleanly and reset buffers
+    val onSelectPreset: (ScenarioPreset) -> Unit = { preset ->
+        currentPreset = preset
+        simulationEngine.loadScenario(preset)
+        trailBuffer.clear()
+        shockwaveBuffer.clear()
+        cameraState.stopFollowing()
+        resetCameraAction()
+    }
+
+    // Hydrate simulation state from scenario preset on initial load
+    LaunchedEffect(simulationEngine) {
+        simulationEngine.loadScenario(currentPreset)
         resetCameraAction()
         simulationEngine.start()
     }
@@ -147,7 +158,9 @@ fun SimulationScreen(
             fps = currentFps,
             frameTimeMs = currentFrameTimeMs,
             slingshotState = slingshotState,
-            onResetCamera = resetCameraAction
+            onResetCamera = resetCameraAction,
+            selectedPreset = currentPreset,
+            onSelectPreset = onSelectPreset
         )
     }
 }
