@@ -26,6 +26,9 @@ class RenderSnapshot(val capacity: Int = PhysicsState.DEFAULT_CAPACITY) {
 
     val posX: DoubleArray = DoubleArray(capacity)
     val posY: DoubleArray = DoubleArray(capacity)
+    val velX: DoubleArray = DoubleArray(capacity)
+    val velY: DoubleArray = DoubleArray(capacity)
+    val mass: DoubleArray = DoubleArray(capacity)
     val radius: FloatArray = FloatArray(capacity)
     val color: IntArray = IntArray(capacity)
     val names: Array<String> = Array(capacity) { "" }
@@ -39,6 +42,9 @@ class RenderSnapshot(val capacity: Int = PhysicsState.DEFAULT_CAPACITY) {
         count = n
         System.arraycopy(state.posX, 0, posX, 0, n)
         System.arraycopy(state.posY, 0, posY, 0, n)
+        System.arraycopy(state.velX, 0, velX, 0, n)
+        System.arraycopy(state.velY, 0, velY, 0, n)
+        System.arraycopy(state.mass, 0, mass, 0, n)
         System.arraycopy(state.radius, 0, radius, 0, n)
         System.arraycopy(state.color, 0, color, 0, n)
         System.arraycopy(state.names, 0, names, 0, n)
@@ -273,6 +279,64 @@ class SimulationEngine(
         }
 
         return inserted
+    }
+
+    /**
+     * Deletes a celestial body at [index] using O(1) swap-and-pop compaction.
+     * Thread-safe and guaranteed zero-allocation inside the synchronized block.
+     *
+     * @return true if successfully deleted, false if index is out of bounds.
+     */
+    fun deleteBodyAt(index: Int, repository: CelestialBodyRepository? = null): Boolean {
+        var deleted = false
+        var nameToDelete = ""
+        synchronized(physicsState) {
+            val count = physicsState.count
+            if (index in 0 until count) {
+                nameToDelete = physicsState.names[index]
+                val lastIndex = count - 1
+                if (index < lastIndex) {
+                    physicsState.posX[index] = physicsState.posX[lastIndex]
+                    physicsState.posY[index] = physicsState.posY[lastIndex]
+                    physicsState.velX[index] = physicsState.velX[lastIndex]
+                    physicsState.velY[index] = physicsState.velY[lastIndex]
+                    physicsState.accX[index] = physicsState.accX[lastIndex]
+                    physicsState.accY[index] = physicsState.accY[lastIndex]
+                    physicsState.mass[index] = physicsState.mass[lastIndex]
+                    physicsState.radius[index] = physicsState.radius[lastIndex]
+                    physicsState.color[index] = physicsState.color[lastIndex]
+                    physicsState.names[index] = physicsState.names[lastIndex]
+                }
+
+                // Zero out vacated last slot
+                physicsState.posX[lastIndex] = 0.0
+                physicsState.posY[lastIndex] = 0.0
+                physicsState.velX[lastIndex] = 0.0
+                physicsState.velY[lastIndex] = 0.0
+                physicsState.accX[lastIndex] = 0.0
+                physicsState.accY[lastIndex] = 0.0
+                physicsState.mass[lastIndex] = 0.0
+                physicsState.radius[lastIndex] = 0f
+                physicsState.color[lastIndex] = 0
+                physicsState.names[lastIndex] = ""
+                physicsState.count = lastIndex
+
+                integrator.computeAccelerations(physicsState, g, softening)
+                publishSnapshot()
+                deleted = true
+            }
+        }
+
+        if (deleted && nameToDelete.isNotEmpty()) {
+            val targetRepo = repository ?: this.repository
+            if (targetRepo != null) {
+                scope.launch(Dispatchers.IO) {
+                    targetRepo.deleteBodyByName(nameToDelete)
+                }
+            }
+        }
+
+        return deleted
     }
 
     /**

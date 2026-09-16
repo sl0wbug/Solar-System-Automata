@@ -1,7 +1,13 @@
 package com.droidlinkstd.solarsystemautomata.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -10,7 +16,10 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.droidlinkstd.solarsystemautomata.ui.inspector.BodyInspectorCard
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -48,6 +57,7 @@ fun SimulationScreen(
     var currentFps by remember { mutableFloatStateOf(60f) }
     var currentFrameTimeMs by remember { mutableFloatStateOf(16.6f) }
     var currentPreset by remember { mutableStateOf(ScenarioPresets.SolarSystem) }
+    var selectedBodyIndex by remember { mutableStateOf<Int?>(null) }
     val slingshotState = remember { SlingshotState() }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -109,11 +119,33 @@ fun SimulationScreen(
     // Helper to switch scenario presets cleanly and reset buffers
     val onSelectPreset: (ScenarioPreset) -> Unit = { preset ->
         currentPreset = preset
+        selectedBodyIndex = null
         simulationEngine.loadScenario(preset)
         trailBuffer.clear()
         shockwaveBuffer.clear()
         cameraState.stopFollowing()
         resetCameraAction()
+    }
+
+    // Deletes currently selected body using O(1) swap-and-pop compaction
+    val onDeleteSelectedBody: () -> Unit = {
+        val target = selectedBodyIndex
+        if (target != null) {
+            val count = simulationEngine.getRenderSnapshot().count
+            if (count > 0) {
+                val lastIndex = count - 1
+                val deleted = simulationEngine.deleteBodyAt(target, repository)
+                if (deleted) {
+                    trailBuffer.swapAndPop(target, lastIndex)
+                    if (cameraState.followedBodyIndex == target) {
+                        cameraState.stopFollowing()
+                    } else if (cameraState.followedBodyIndex == lastIndex) {
+                        cameraState.followBody(target)
+                    }
+                    selectedBodyIndex = null
+                }
+            }
+        }
     }
 
     // Hydrate simulation state from scenario preset on initial load
@@ -148,10 +180,43 @@ fun SimulationScreen(
             onFrameMetrics = { fps, frameTimeMs ->
                 currentFps = fps
                 currentFrameTimeMs = frameTimeMs
+            },
+            onSelectBody = { hitIndex ->
+                selectedBodyIndex = hitIndex
             }
         )
 
-        // 2. Floating interactive controls & telemetry HUD
+        // 2. Floating Body Telemetry Inspector Card
+        AnimatedVisibility(
+            visible = selectedBodyIndex != null && selectedBodyIndex!! in 0 until simulationEngine.getRenderSnapshot().count,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 16.dp, bottom = 185.dp)
+        ) {
+            selectedBodyIndex?.let { index ->
+                val snapshot = simulationEngine.getRenderSnapshot()
+                if (index in 0 until snapshot.count) {
+                    BodyInspectorCard(
+                        snapshot = snapshot,
+                        bodyIndex = index,
+                        isFollowing = cameraState.isFollowing && cameraState.followedBodyIndex == index,
+                        onToggleFollow = {
+                            if (cameraState.isFollowing && cameraState.followedBodyIndex == index) {
+                                cameraState.stopFollowing()
+                            } else {
+                                cameraState.followBody(index)
+                            }
+                        },
+                        onDeleteBody = onDeleteSelectedBody,
+                        onClose = { selectedBodyIndex = null }
+                    )
+                }
+            }
+        }
+
+        // 3. Floating interactive controls & telemetry HUD
         SimulationControlsOverlay(
             simulationEngine = simulationEngine,
             cameraState = cameraState,

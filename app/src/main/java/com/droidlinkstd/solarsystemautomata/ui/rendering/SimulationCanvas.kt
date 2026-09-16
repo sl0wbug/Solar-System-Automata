@@ -148,7 +148,8 @@ fun SimulationCanvas(
     paintCache: SimulationPaintCache = remember { SimulationPaintCache() },
     slingshotState: SlingshotState = remember { SlingshotState() },
     onSpawnBody: ((name: String, mass: Double, radius: Float, color: Int, posX: Double, posY: Double, velX: Double, velY: Double) -> Unit)? = null,
-    onFrameMetrics: ((fps: Float, frameTimeMs: Float) -> Unit)? = null
+    onFrameMetrics: ((fps: Float, frameTimeMs: Float) -> Unit)? = null,
+    onSelectBody: ((Int?) -> Unit)? = null
 ) {
     // Frame ticker driven by withFrameNanos to synchronize with Android VSYNC
     var frameTicker by remember { mutableLongStateOf(0L) }
@@ -262,8 +263,10 @@ fun SimulationCanvas(
                     )
                     if (hitIndex >= 0) {
                         cameraState.followBody(hitIndex)
+                        onSelectBody?.invoke(hitIndex)
                     } else {
                         cameraState.stopFollowing()
+                        onSelectBody?.invoke(null)
                     }
                 }
             }
