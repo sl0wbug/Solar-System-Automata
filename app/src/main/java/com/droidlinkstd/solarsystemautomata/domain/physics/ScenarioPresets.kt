@@ -63,30 +63,217 @@ object ScenarioPresets {
     val SolarSystem = ScenarioPreset(
         id = ScenarioPresetId.SOLAR_SYSTEM,
         title = "Solar System",
-        subtitle = "Sun & 8 Keplerian Planets",
-        description = "Our home planetary system calibrated in Astronomical Units (AU) and Earth masses.",
+        subtitle = "Sun, 8 Planets & Major Moons",
+        description = "Our home planetary system calibrated in AU and Earth masses, featuring major natural satellites.",
         iconEmoji = "🌌",
         accentColorHex = 0xFF60A5FA, // Sky Blue
-        g = 1.0,
-        softening = 0.001,
+        g = 1.0 / 333000.0,
+        softening = 0.0001,
         defaultSpeed = 1.0,
         bodiesFactory = { createSolarSystemBodies() }
     )
 
+    private data class MoonSpec(
+        val name: String,
+        val mass: Double,
+        val radius: Double,
+        val relativeDistance: Double,
+        val colorHex: Long,
+        val description: String,
+        val isRetrograde: Boolean = false
+    )
+
+    private data class PlanetSpec(
+        val name: String,
+        val distance: Double,
+        val mass: Double,
+        val radius: Double,
+        val colorHex: Long,
+        val description: String,
+        val moons: List<MoonSpec> = emptyList()
+    )
+
     private fun createSolarSystemBodies(): List<CelestialBody> {
         val sunMass = 333000.0
+        val g = 1.0 / sunMass
+
         val planetsData = listOf(
-            Triple("Mercury", 0.39 to 1.6, 0.055 to 0.38 to 0xFFA9A9A9L),
-            Triple("Venus", 0.72 to 1.17, 0.815 to 0.95 to 0xFFE0C097L),
-            Triple("Earth", 1.00 to 1.00, 1.000 to 1.00 to 0xFF4B85C1L),
-            Triple("Mars", 1.52 to 0.80, 0.107 to 0.53 to 0xFFB06443L),
-            Triple("Jupiter", 5.20 to 0.43, 317.8 to 11.2 to 0xFFC7B198L),
-            Triple("Saturn", 9.58 to 0.32, 95.2 to 9.45 to 0xFFE2C48DL),
-            Triple("Uranus", 19.2 to 0.23, 14.5 to 4.00 to 0xFF9FC4D0L),
-            Triple("Neptune", 30.0 to 0.18, 17.1 to 3.88 to 0xFF3E60BBL)
+            PlanetSpec(
+                name = "Mercury",
+                distance = 0.39,
+                mass = 0.055,
+                radius = 0.38,
+                colorHex = 0xFFA9A9A9L,
+                description = "Mercury planet orbiting at 0.39 AU."
+            ),
+            PlanetSpec(
+                name = "Venus",
+                distance = 0.72,
+                mass = 0.815,
+                radius = 0.95,
+                colorHex = 0xFFE0C097L,
+                description = "Venus planet orbiting at 0.72 AU."
+            ),
+            PlanetSpec(
+                name = "Earth",
+                distance = 1.00,
+                mass = 1.000,
+                radius = 1.00,
+                colorHex = 0xFF4B85C1L,
+                description = "Earth planet orbiting at 1.00 AU.",
+                moons = listOf(
+                    MoonSpec(
+                        name = "Moon",
+                        mass = 0.0123,
+                        radius = 0.27,
+                        relativeDistance = 0.0050,
+                        colorHex = 0xFFD1D5DBL,
+                        description = "Earth's natural satellite, Luna."
+                    )
+                )
+            ),
+            PlanetSpec(
+                name = "Mars",
+                distance = 1.52,
+                mass = 0.107,
+                radius = 0.53,
+                colorHex = 0xFFB06443L,
+                description = "Mars planet orbiting at 1.52 AU.",
+                moons = listOf(
+                    MoonSpec(
+                        name = "Phobos",
+                        mass = 0.0001,
+                        radius = 0.16,
+                        relativeDistance = 0.0035,
+                        colorHex = 0xFF8C7D70L,
+                        description = "Inner Martian moon Phobos."
+                    ),
+                    MoonSpec(
+                        name = "Deimos",
+                        mass = 0.00005,
+                        radius = 0.12,
+                        relativeDistance = 0.0050,
+                        colorHex = 0xFF786C60L,
+                        description = "Outer Martian moon Deimos."
+                    )
+                )
+            ),
+            PlanetSpec(
+                name = "Jupiter",
+                distance = 5.20,
+                mass = 317.8,
+                radius = 11.2,
+                colorHex = 0xFFC7B198L,
+                description = "Jupiter planet orbiting at 5.20 AU.",
+                moons = listOf(
+                    MoonSpec(
+                        name = "Io",
+                        mass = 0.015,
+                        radius = 0.28,
+                        relativeDistance = 0.040,
+                        colorHex = 0xFFF59E0BL,
+                        description = "Volcanic Jovian moon Io."
+                    ),
+                    MoonSpec(
+                        name = "Europa",
+                        mass = 0.008,
+                        radius = 0.24,
+                        relativeDistance = 0.065,
+                        colorHex = 0xFFBAE6FDL,
+                        description = "Subsurface ocean Jovian moon Europa."
+                    ),
+                    MoonSpec(
+                        name = "Ganymede",
+                        mass = 0.025,
+                        radius = 0.41,
+                        relativeDistance = 0.095,
+                        colorHex = 0xFF9CA3AFL,
+                        description = "Largest Solar System moon Ganymede."
+                    ),
+                    MoonSpec(
+                        name = "Callisto",
+                        mass = 0.018,
+                        radius = 0.38,
+                        relativeDistance = 0.135,
+                        colorHex = 0xFF6B7280L,
+                        description = "Ancient cratered Jovian moon Callisto."
+                    )
+                )
+            ),
+            PlanetSpec(
+                name = "Saturn",
+                distance = 9.58,
+                mass = 95.2,
+                radius = 9.45,
+                colorHex = 0xFFE2C48DL,
+                description = "Saturn planet orbiting at 9.58 AU.",
+                moons = listOf(
+                    MoonSpec(
+                        name = "Titan",
+                        mass = 0.0225,
+                        radius = 0.40,
+                        relativeDistance = 0.050,
+                        colorHex = 0xFFF97316L,
+                        description = "Dense atmosphere Saturnian moon Titan."
+                    ),
+                    MoonSpec(
+                        name = "Enceladus",
+                        mass = 0.0002,
+                        radius = 0.15,
+                        relativeDistance = 0.090,
+                        colorHex = 0xFFF8FAFCL,
+                        description = "Reflective ice Saturnian moon Enceladus."
+                    )
+                )
+            ),
+            PlanetSpec(
+                name = "Uranus",
+                distance = 19.2,
+                mass = 14.5,
+                radius = 4.00,
+                colorHex = 0xFF9FC4D0L,
+                description = "Uranus planet orbiting at 19.2 AU.",
+                moons = listOf(
+                    MoonSpec(
+                        name = "Titania",
+                        mass = 0.0006,
+                        radius = 0.24,
+                        relativeDistance = 0.060,
+                        colorHex = 0xFFCBD5E1L,
+                        description = "Largest Uranian moon Titania."
+                    ),
+                    MoonSpec(
+                        name = "Oberon",
+                        mass = 0.0005,
+                        radius = 0.23,
+                        relativeDistance = 0.100,
+                        colorHex = 0xFF94A3B8L,
+                        description = "Outermost major Uranian moon Oberon."
+                    )
+                )
+            ),
+            PlanetSpec(
+                name = "Neptune",
+                distance = 30.0,
+                mass = 17.1,
+                radius = 3.88,
+                colorHex = 0xFF3E60BBL,
+                description = "Neptune planet orbiting at 30.0 AU.",
+                moons = listOf(
+                    MoonSpec(
+                        name = "Triton",
+                        mass = 0.0035,
+                        radius = 0.21,
+                        relativeDistance = 0.080,
+                        colorHex = 0xFFA5B4FCL,
+                        description = "Retrograde captured moon Triton.",
+                        isRetrograde = true
+                    )
+                )
+            )
         )
 
-        val list = ArrayList<CelestialBody>(9)
+        val list = ArrayList<CelestialBody>(25)
         // Central Sun
         list.add(
             CelestialBody(
@@ -103,25 +290,41 @@ object ScenarioPresets {
             )
         )
 
-        var idCounter = 1
-        for ((name, orbit, props) in planetsData) {
-            val (dist, speed) = orbit
-            val (massRadius, color) = props
-            val (mass, radius) = massRadius
-            list.add(
-                CelestialBody(
-                    id = idCounter++,
-                    name = name,
-                    mass = mass,
-                    positionX = dist,
+        var planetIdCounter = 1
+        var moonIdCounter = 101
+
+        for (planet in planetsData) {
+            val planetVy = sqrt(g * sunMass / planet.distance)
+            val planetBody = CelestialBody(
+                id = planetIdCounter++,
+                name = planet.name,
+                mass = planet.mass,
+                positionX = planet.distance,
+                positionY = 0.0,
+                velocityX = 0.0,
+                velocityY = planetVy,
+                radius = planet.radius,
+                colorHex = planet.colorHex,
+                description = planet.description
+            )
+            list.add(planetBody)
+
+            for (moon in planet.moons) {
+                val vRel = sqrt(g * planet.mass / moon.relativeDistance) * (if (moon.isRetrograde) -1.0 else 1.0)
+                val moonBody = CelestialBody(
+                    id = moonIdCounter++,
+                    name = moon.name,
+                    mass = moon.mass,
+                    positionX = planet.distance + moon.relativeDistance,
                     positionY = 0.0,
                     velocityX = 0.0,
-                    velocityY = speed,
-                    radius = radius,
-                    colorHex = color,
-                    description = "$name planet orbiting at ${dist} AU."
+                    velocityY = planetVy + vRel,
+                    radius = moon.radius,
+                    colorHex = moon.colorHex,
+                    description = moon.description
                 )
-            )
+                list.add(moonBody)
+            }
         }
 
         return list
