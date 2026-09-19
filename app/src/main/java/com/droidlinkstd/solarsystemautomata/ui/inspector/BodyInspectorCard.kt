@@ -64,10 +64,12 @@ fun BodyInspectorCard(
     val speed = hypot(vx, vy)
     val distance = hypot(x, y)
 
+    val isMoon = radius < 0.5f && mass < 0.05
     val (classification, classColor) = when {
         mass >= 1000.0 -> "STAR" to Color(0xFFFBBF24)
         mass >= 10.0 -> "GAS GIANT" to Color(0xFFFB923C)
-        mass >= 0.01 -> "TERRESTRIAL" to Color(0xFF38BDF8)
+        isMoon -> "MOON" to Color(0xFFA78BFA)
+        mass >= 0.05 -> "TERRESTRIAL" to Color(0xFF38BDF8)
         else -> "ASTEROID" to Color(0xFF94A3B8)
     }
 

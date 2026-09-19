@@ -43,8 +43,10 @@ object HitTester {
             val sx = cameraState.worldToScreenX(wx)
             val sy = cameraState.worldToScreenY(wy)
 
-            val rawRadiusPx = snapshot.radius[i] * cameraState.zoom
-            val visualRadiusPx = rawRadiusPx.coerceIn(3.5f, 45f)
+            val visualRadiusPx = com.droidlinkstd.solarsystemautomata.ui.rendering.CelestialVisualScale.calculateVisualRadiusPx(
+                snapshot.radius[i],
+                cameraState.zoom
+            )
             val effectiveHitRadius = max(visualRadiusPx, touchSlopPx)
             val effectiveHitRadiusSq = effectiveHitRadius * effectiveHitRadius
 

@@ -1,6 +1,7 @@
 package com.droidlinkstd.solarsystemautomata.ui.rendering
 
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Typeface
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -125,6 +126,59 @@ class SimulationPaintCache {
         strokeCap = Paint.Cap.ROUND
         isAntiAlias = true
     }
+
+    val sunCoronaOuterPaint = Paint().apply {
+        style = Paint.Style.FILL
+        isAntiAlias = true
+        color = 0x22F59E0B.toInt() // Soft ethereal outer solar corona
+    }
+
+    val sunCoronaMidPaint = Paint().apply {
+        style = Paint.Style.FILL
+        isAntiAlias = true
+        color = 0x55FBBF24.toInt() // Vibrant golden mid solar corona
+    }
+
+    val sunCorePaint = Paint().apply {
+        style = Paint.Style.FILL
+        isAntiAlias = true
+        color = 0xFFFFFBEB.toInt() // Radiant luminous star core
+    }
+
+    val saturnRingPaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3.5f
+        isAntiAlias = true
+        color = 0xCCE2C48D.toInt() // Golden-beige main planetary ring
+    }
+
+    val saturnRingInnerPaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2.0f
+        isAntiAlias = true
+        color = 0x66BFA06D.toInt() // Faint inner C-ring
+    }
+
+    val moonLabelPaint = Paint().apply {
+        style = Paint.Style.FILL
+        isAntiAlias = true
+        textSize = 20f
+        textAlign = Paint.Align.CENTER
+        color = 0x99CBD5E1.toInt()
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    }
+
+    val moonLabelShadowPaint = Paint().apply {
+        style = Paint.Style.FILL
+        isAntiAlias = true
+        textSize = 20f
+        textAlign = Paint.Align.CENTER
+        color = 0x66000000.toInt()
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    }
+
+    val saturnRingRectOuter = RectF()
+    val saturnRingRectInner = RectF()
 }
 
 /**
@@ -147,9 +201,11 @@ fun SimulationCanvas(
     shockwaveBuffer: ShockwaveBuffer = remember { ShockwaveBuffer() },
     paintCache: SimulationPaintCache = remember { SimulationPaintCache() },
     slingshotState: SlingshotState = remember { SlingshotState() },
+    selectedBodyIndex: Int? = null,
     onSpawnBody: ((name: String, mass: Double, radius: Float, color: Int, posX: Double, posY: Double, velX: Double, velY: Double) -> Unit)? = null,
     onFrameMetrics: ((fps: Float, frameTimeMs: Float) -> Unit)? = null,
-    onSelectBody: ((Int?) -> Unit)? = null
+    onSelectBody: ((Int?) -> Unit)? = null,
+    onFirstLayout: (() -> Unit)? = null
 ) {
     // Frame ticker driven by withFrameNanos to synchronize with Android VSYNC
     var frameTicker by remember { mutableLongStateOf(0L) }
@@ -282,7 +338,11 @@ fun SimulationCanvas(
         modifier = modifier
             .fillMaxSize()
             .onSizeChanged { size ->
+                val wasUninitialized = cameraState.viewportWidth <= 0f
                 cameraState.updateViewport(size.width.toFloat(), size.height.toFloat())
+                if (wasUninitialized && size.width > 0 && size.height > 0) {
+                    onFirstLayout?.invoke()
+                }
             }
             .then(gestureModifier)
     ) {
@@ -314,22 +374,31 @@ fun SimulationCanvas(
         // 4. Draw orbital trails with progressive alpha fade
         var bodyIndex = 0
         while (bodyIndex < count) {
-            val bodyColor = snapshot.color[bodyIndex]
-            val r = (bodyColor shr 16) and 0xFF
-            val g = (bodyColor shr 8) and 0xFF
-            val b = bodyColor and 0xFF
+            val radiusModel = snapshot.radius[bodyIndex]
+            val mass = snapshot.mass[bodyIndex]
+            val isTargeted = (cameraState.isFollowing && cameraState.followedBodyIndex == bodyIndex) ||
+                    (selectedBodyIndex == bodyIndex)
+            // Major celestial bodies (Sun, planets, major moons) or targeted bodies draw trails
+            val shouldDrawTrail = isTargeted || mass >= 0.0005 || radiusModel >= 0.15f
 
-            trailBuffer.forEachTrailSegment(bodyIndex) { x1, y1, x2, y2, progress ->
-                val sx1 = cameraState.worldToScreenX(x1)
-                val sy1 = cameraState.worldToScreenY(y1)
-                val sx2 = cameraState.worldToScreenX(x2)
-                val sy2 = cameraState.worldToScreenY(y2)
+            if (shouldDrawTrail) {
+                val bodyColor = snapshot.color[bodyIndex]
+                val r = (bodyColor shr 16) and 0xFF
+                val g = (bodyColor shr 8) and 0xFF
+                val b = bodyColor and 0xFF
 
-                // Alpha fades from near transparent (tail) to solid (head)
-                val alpha = (progress * 190).toInt().coerceIn(10, 220)
-                paintCache.trailPaint.setARGB(alpha, r, g, b)
+                trailBuffer.forEachTrailSegment(bodyIndex) { x1, y1, x2, y2, progress ->
+                    val sx1 = cameraState.worldToScreenX(x1)
+                    val sy1 = cameraState.worldToScreenY(y1)
+                    val sx2 = cameraState.worldToScreenX(x2)
+                    val sy2 = cameraState.worldToScreenY(y2)
 
-                nativeCanvas.drawLine(sx1, sy1, sx2, sy2, paintCache.trailPaint)
+                    // Alpha fades from near transparent (tail) to solid (head)
+                    val alpha = (progress * 190).toInt().coerceIn(10, 220)
+                    paintCache.trailPaint.setARGB(alpha, r, g, b)
+
+                    nativeCanvas.drawLine(sx1, sy1, sx2, sy2, paintCache.trailPaint)
+                }
             }
             bodyIndex++
         }
@@ -337,7 +406,19 @@ fun SimulationCanvas(
         // 4.5. Draw active impact shockwaves beneath celestial bodies
         shockwaveBuffer.draw(nativeCanvas, cameraState, paintCache.shockwavePaint, canvasWidth, canvasHeight)
 
-        // 5. Draw celestial bodies (spheres, halos, and names)
+        // 5. Draw celestial bodies (spheres, halos, Saturn rings, and names)
+        var sunSx = 0f
+        var sunSy = 0f
+        var sunRadiusPx = 0f
+        var hasSun = false
+        if (count > 0) {
+            val sunRadiusModel = snapshot.radius[0]
+            sunRadiusPx = CelestialVisualScale.calculateVisualRadiusPx(sunRadiusModel, cameraState.zoom)
+            sunSx = cameraState.worldToScreenX(snapshot.posX[0])
+            sunSy = cameraState.worldToScreenY(snapshot.posY[0])
+            hasSun = true
+        }
+
         bodyIndex = 0
         while (bodyIndex < count) {
             val wx = snapshot.posX[bodyIndex]
@@ -346,31 +427,98 @@ fun SimulationCanvas(
             val sy = cameraState.worldToScreenY(wy)
 
             // Cull bodies completely outside the screen viewport (with margin)
-            if (sx >= -100f && sx <= canvasWidth + 100f && sy >= -100f && sy <= canvasHeight + 100f) {
-                val rawRadiusPx = snapshot.radius[bodyIndex] * cameraState.zoom
-                // Clamp screen radius to keep distant bodies visible
-                val radiusPx = rawRadiusPx.coerceIn(3.5f, 45f)
+            if (sx >= -120f && sx <= canvasWidth + 120f && sy >= -120f && sy <= canvasHeight + 120f) {
+                val radiusModel = snapshot.radius[bodyIndex]
+                val radiusPx = CelestialVisualScale.calculateVisualRadiusPx(radiusModel, cameraState.zoom)
 
                 val bodyColor = snapshot.color[bodyIndex]
                 val r = (bodyColor shr 16) and 0xFF
                 val g = (bodyColor shr 8) and 0xFF
                 val b = bodyColor and 0xFF
 
-                // Draw outer atmospheric/gravitational glow
-                paintCache.haloPaint.setARGB(45, r, g, b)
-                nativeCanvas.drawCircle(sx, sy, radiusPx * 1.6f, paintCache.haloPaint)
-
-                // Draw solid celestial sphere
-                paintCache.bodyPaint.color = bodyColor
-                nativeCanvas.drawCircle(sx, sy, radiusPx, paintCache.bodyPaint)
-
-                // Draw name label below the body
                 val name = snapshot.names[bodyIndex]
+                val isSun = name.contains("Sun", ignoreCase = true) || snapshot.mass[bodyIndex] >= 10000.0
+                val isSaturn = name.equals("Saturn", ignoreCase = true)
+
+                if (isSun) {
+                    // Radiant multi-layer solar corona
+                    nativeCanvas.drawCircle(sx, sy, radiusPx * 2.2f, paintCache.sunCoronaOuterPaint)
+                    nativeCanvas.drawCircle(sx, sy, radiusPx * 1.5f, paintCache.sunCoronaMidPaint)
+
+                    // Blazing solar body
+                    paintCache.bodyPaint.color = bodyColor
+                    nativeCanvas.drawCircle(sx, sy, radiusPx, paintCache.bodyPaint)
+
+                    // Hot stellar core highlight
+                    nativeCanvas.drawCircle(sx, sy, radiusPx * 0.55f, paintCache.sunCorePaint)
+                } else {
+                    // Outer atmospheric/gravitational glow
+                    paintCache.haloPaint.setARGB(40, r, g, b)
+                    nativeCanvas.drawCircle(sx, sy, radiusPx * 1.45f, paintCache.haloPaint)
+
+                    // Solid celestial sphere
+                    paintCache.bodyPaint.color = bodyColor
+                    nativeCanvas.drawCircle(sx, sy, radiusPx, paintCache.bodyPaint)
+
+                    if (isSaturn) {
+                        // Render Saturn's iconic tilted planetary rings
+                        nativeCanvas.save()
+                        nativeCanvas.rotate(-22f, sx, sy)
+                        paintCache.saturnRingRectOuter.set(
+                            sx - radiusPx * 2.3f,
+                            sy - radiusPx * 0.72f,
+                            sx + radiusPx * 2.3f,
+                            sy + radiusPx * 0.72f
+                        )
+                        nativeCanvas.drawOval(paintCache.saturnRingRectOuter, paintCache.saturnRingPaint)
+
+                        paintCache.saturnRingRectInner.set(
+                            sx - radiusPx * 1.7f,
+                            sy - radiusPx * 0.52f,
+                            sx + radiusPx * 1.7f,
+                            sy + radiusPx * 0.52f
+                        )
+                        nativeCanvas.drawOval(paintCache.saturnRingRectInner, paintCache.saturnRingInnerPaint)
+                        nativeCanvas.restore()
+                    }
+                }
+
+                // Draw name label with clean hierarchy:
+                // Major bodies (Sun, planets) are always shown unless visually engulfed by the Sun's disk at wide zoom
                 if (name.isNotEmpty()) {
-                    val labelY = sy + radiusPx + 22f
-                    // Drop shadow for legibility over trails/stars
-                    nativeCanvas.drawText(name, sx + 1f, labelY + 1f, paintCache.labelShadowPaint)
-                    nativeCanvas.drawText(name, sx, labelY, paintCache.labelPaint)
+                    val isMajorBody = isSun || (radiusModel >= 0.35f && snapshot.mass[bodyIndex] >= 0.05)
+                    val isMajorMoon = !isMajorBody && (snapshot.mass[bodyIndex] >= 0.0005 || radiusModel >= 0.15f)
+                    val isTargeted = (cameraState.isFollowing && cameraState.followedBodyIndex == bodyIndex) ||
+                            (selectedBodyIndex == bodyIndex)
+
+                    val isEngulfedBySun = !isSun && !isTargeted && hasSun && run {
+                        val dx = sx - sunSx
+                        val dy = sy - sunSy
+                        val limit = sunRadiusPx + 16f
+                        (dx * dx + dy * dy) < (limit * limit)
+                    }
+
+                    // Hierarchy:
+                    // 1) Major bodies (Sun, 8 planets) always show unless engulfed
+                    // 2) Major round moons show when zoomed in (zoom >= 200f)
+                    // 3) Minor moonlets show only when selected/followed or ultra-zoomed (zoom >= 3000f)
+                    val shouldShowLabel = !isEngulfedBySun && (
+                        isMajorBody ||
+                        isTargeted ||
+                        (isMajorMoon && cameraState.zoom >= 200f) ||
+                        (cameraState.zoom >= 3000f)
+                    )
+
+                    if (shouldShowLabel) {
+                        val isMoon = !isMajorBody
+                        val lPaint = if (isMoon) paintCache.moonLabelPaint else paintCache.labelPaint
+                        val sPaint = if (isMoon) paintCache.moonLabelShadowPaint else paintCache.labelShadowPaint
+                        val labelY = sy + radiusPx + (if (isMoon) 16f else 22f)
+
+                        // Drop shadow for legibility over trails/stars
+                        nativeCanvas.drawText(name, sx + 1f, labelY + 1f, sPaint)
+                        nativeCanvas.drawText(name, sx, labelY, lPaint)
+                    }
                 }
             }
             bodyIndex++
@@ -382,8 +530,10 @@ fun SimulationCanvas(
             val fx = cameraState.worldToScreenX(snapshot.posX[followedIdx])
             val fy = cameraState.worldToScreenY(snapshot.posY[followedIdx])
 
-            val rawRadiusPx = snapshot.radius[followedIdx] * cameraState.zoom
-            val vr = rawRadiusPx.coerceIn(3.5f, 45f)
+            val vr = CelestialVisualScale.calculateVisualRadiusPx(
+                snapshot.radius[followedIdx],
+                cameraState.zoom
+            )
             val reticleR = vr + 12f
 
             // Outer glow ring and sharp cyan reticle
