@@ -64,6 +64,8 @@ class OrbitalIntegrator {
             val xi = posX[i]
             val yi = posY[i]
             val mi = mass[i]
+            var axi = accX[i]
+            var ayi = accY[i]
 
             var j = i + 1
             while (j < n) {
@@ -77,13 +79,15 @@ class OrbitalIntegrator {
                 val fOnI = fCommon * mass[j]
                 val fOnJ = fCommon * mi
 
-                accX[i] += dx * fOnI
-                accY[i] += dy * fOnI
+                axi += dx * fOnI
+                ayi += dy * fOnI
                 accX[j] -= dx * fOnJ
                 accY[j] -= dy * fOnJ
 
                 j++
             }
+            accX[i] = axi
+            accY[i] = ayi
             i++
         }
 
@@ -125,6 +129,8 @@ class OrbitalIntegrator {
             val xi = posX[i]
             val yi = posY[i]
             val mi = mass[i]
+            var axi = accX[i]
+            var ayi = accY[i]
 
             var j = i + 1
             while (j < n) {
@@ -138,13 +144,15 @@ class OrbitalIntegrator {
                 val fOnI = fCommon * mass[j]
                 val fOnJ = fCommon * mi
 
-                accX[i] += dx * fOnI
-                accY[i] += dy * fOnI
+                axi += dx * fOnI
+                ayi += dy * fOnI
                 accX[j] -= dx * fOnJ
                 accY[j] -= dy * fOnJ
 
                 j++
             }
+            accX[i] = axi
+            accY[i] = ayi
             i++
         }
     }

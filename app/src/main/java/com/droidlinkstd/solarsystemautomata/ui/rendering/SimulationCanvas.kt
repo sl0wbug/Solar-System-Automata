@@ -411,9 +411,10 @@ fun SimulationCanvas(
         var sunSy = 0f
         var sunRadiusPx = 0f
         var hasSun = false
+        val zoomFactor = CelestialVisualScale.calculateZoomFactor(cameraState.zoom)
         if (count > 0) {
             val sunRadiusModel = snapshot.radius[0]
-            sunRadiusPx = CelestialVisualScale.calculateVisualRadiusPx(sunRadiusModel, cameraState.zoom)
+            sunRadiusPx = CelestialVisualScale.calculateVisualRadiusPx(sunRadiusModel, zoomFactor)
             sunSx = cameraState.worldToScreenX(snapshot.posX[0])
             sunSy = cameraState.worldToScreenY(snapshot.posY[0])
             hasSun = true
@@ -429,7 +430,7 @@ fun SimulationCanvas(
             // Cull bodies completely outside the screen viewport (with margin)
             if (sx >= -120f && sx <= canvasWidth + 120f && sy >= -120f && sy <= canvasHeight + 120f) {
                 val radiusModel = snapshot.radius[bodyIndex]
-                val radiusPx = CelestialVisualScale.calculateVisualRadiusPx(radiusModel, cameraState.zoom)
+                val radiusPx = CelestialVisualScale.calculateVisualRadiusPx(radiusModel, zoomFactor)
 
                 val bodyColor = snapshot.color[bodyIndex]
                 val r = (bodyColor shr 16) and 0xFF
@@ -532,7 +533,7 @@ fun SimulationCanvas(
 
             val vr = CelestialVisualScale.calculateVisualRadiusPx(
                 snapshot.radius[followedIdx],
-                cameraState.zoom
+                zoomFactor
             )
             val reticleR = vr + 12f
 

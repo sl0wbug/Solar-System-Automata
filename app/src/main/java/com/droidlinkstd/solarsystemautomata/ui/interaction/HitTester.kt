@@ -35,6 +35,7 @@ object HitTester {
 
         var closestIndex = -1
         var minDistanceSq = Float.MAX_VALUE
+        val zoomFactor = com.droidlinkstd.solarsystemautomata.ui.rendering.CelestialVisualScale.calculateZoomFactor(cameraState.zoom)
 
         var i = 0
         while (i < count) {
@@ -45,7 +46,7 @@ object HitTester {
 
             val visualRadiusPx = com.droidlinkstd.solarsystemautomata.ui.rendering.CelestialVisualScale.calculateVisualRadiusPx(
                 snapshot.radius[i],
-                cameraState.zoom
+                zoomFactor
             )
             val effectiveHitRadius = max(visualRadiusPx, touchSlopPx)
             val effectiveHitRadiusSq = effectiveHitRadius * effectiveHitRadius

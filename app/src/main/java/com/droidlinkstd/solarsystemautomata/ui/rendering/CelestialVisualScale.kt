@@ -20,6 +20,30 @@ object CelestialVisualScale {
     const val REFERENCE_ZOOM: Float = 15.0f
 
     /**
+     * Precomputes the zoom scaling factor for a camera viewport frame.
+     * Hoisting this computation outside rendering and hit-testing loops avoids
+     * redundant transcendental Math.pow operations.
+     */
+    fun calculateZoomFactor(zoom: Float): Double {
+        val zoomRatio = (zoom / REFERENCE_ZOOM).coerceIn(0.01f, 1000f).toDouble()
+        return Math.pow(zoomRatio, 0.28)
+    }
+
+    /**
+     * Calculates mathematical perceptual radius in screen pixels using a precalculated [zoomFactor].
+     * Guaranteed zero heap allocations and avoids redundant Math.pow calls per body.
+     *
+     * @param radiusModel Physical radius in Earth radii ($R_\oplus$).
+     * @param zoomFactor Current precalculated zoom scaling factor.
+     */
+    fun calculateVisualRadiusPx(radiusModel: Float, zoomFactor: Double): Float {
+        if (radiusModel <= 0f) return 1.2f
+
+        val base = 2.5 * Math.pow(radiusModel.toDouble(), 0.60) + 1.0
+        return (base * zoomFactor).toFloat()
+    }
+
+    /**
      * Calculates mathematical perceptual radius in screen pixels.
      * Guaranteed zero heap allocations.
      *
@@ -27,12 +51,6 @@ object CelestialVisualScale {
      * @param zoom Current camera viewport zoom in pixels/AU.
      */
     fun calculateVisualRadiusPx(radiusModel: Float, zoom: Float): Float {
-        if (radiusModel <= 0f) return 1.2f
-
-        val zoomRatio = (zoom / REFERENCE_ZOOM).coerceIn(0.01f, 1000f).toDouble()
-        val zoomFactor = Math.pow(zoomRatio, 0.28)
-
-        val base = 2.5 * Math.pow(radiusModel.toDouble(), 0.60) + 1.0
-        return (base * zoomFactor).toFloat()
+        return calculateVisualRadiusPx(radiusModel, calculateZoomFactor(zoom))
     }
 }
