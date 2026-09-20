@@ -174,6 +174,6 @@ class PhysicsState(val capacity: Int = DEFAULT_CAPACITY) {
     }
 
     companion object {
-        const val DEFAULT_CAPACITY: Int = 256
+        const val DEFAULT_CAPACITY: Int = 512
     }
 }

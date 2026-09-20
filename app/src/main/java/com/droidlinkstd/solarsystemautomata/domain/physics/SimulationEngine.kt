@@ -7,6 +7,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
@@ -79,6 +82,9 @@ class SimulationEngine(
     private val isRunningFlag = AtomicBoolean(false)
     val isRunning: Boolean
         get() = isRunningFlag.get()
+
+    private val _isRunningFlow = MutableStateFlow(false)
+    val isRunningFlow: StateFlow<Boolean> = _isRunningFlow.asStateFlow()
 
     @Volatile
     var speedMultiplier: Double = 1.0
@@ -161,6 +167,7 @@ class SimulationEngine(
      */
     fun start() {
         if (isRunningFlag.compareAndSet(false, true)) {
+            _isRunningFlow.value = true
             simulationJob = scope.launch(dispatcher) {
                 runLoop()
             }
@@ -172,6 +179,7 @@ class SimulationEngine(
      */
     fun pause() {
         if (isRunningFlag.compareAndSet(true, false)) {
+            _isRunningFlow.value = false
             simulationJob?.cancel()
             simulationJob = null
         }

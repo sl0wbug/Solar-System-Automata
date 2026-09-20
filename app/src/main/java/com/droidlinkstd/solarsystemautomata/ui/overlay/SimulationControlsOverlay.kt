@@ -30,6 +30,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableFloatStateOf
@@ -48,8 +49,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.droidlinkstd.solarsystemautomata.domain.physics.SimulationEngine
 import com.droidlinkstd.solarsystemautomata.ui.camera.CameraState
-import com.droidlinkstd.solarsystemautomata.ui.interaction.SlingshotState
-import com.droidlinkstd.solarsystemautomata.ui.interaction.SpawnPreset
+import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.ln
+import kotlin.math.pow
+import kotlin.math.round
 
 /**
  * Lightweight Compose UI floating over the Canvas in a Box.
@@ -68,11 +72,10 @@ fun SimulationControlsOverlay(
     frameTimeMs: Float,
     onResetCamera: () -> Unit,
     modifier: Modifier = Modifier,
-    slingshotState: SlingshotState = remember { SlingshotState() },
     selectedPreset: ScenarioPreset = ScenarioPresets.SolarSystem,
     onSelectPreset: (ScenarioPreset) -> Unit = {}
 ) {
-    var isRunning by remember { mutableStateOf(simulationEngine.isRunning) }
+    val isRunning by simulationEngine.isRunningFlow.collectAsState()
     var currentSpeed by remember { mutableDoubleStateOf(simulationEngine.speedMultiplier) }
     var isPresetPickerOpen by remember { mutableStateOf(false) }
 
@@ -94,187 +97,45 @@ fun SimulationControlsOverlay(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // System info chip & Mode switcher
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    val currentAccent = Color(selectedPreset.accentColorHex)
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xCC0B0F19))
-                            .border(
-                                1.dp,
-                                if (isPresetPickerOpen) currentAccent else currentAccent.copy(alpha = 0.5f),
-                                RoundedCornerShape(12.dp)
-                            )
-                            .clickable { isPresetPickerOpen = !isPresetPickerOpen }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = selectedPreset.iconEmoji,
-                                fontSize = 12.sp
-                            )
-                            Text(
-                                text = selectedPreset.title.uppercase(),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                color = currentAccent,
-                                letterSpacing = 0.5.sp
-                            )
-                            Text(
-                                text = if (isPresetPickerOpen) "▲" else "▼",
-                                fontSize = 9.sp,
-                                color = Color.White.copy(alpha = 0.7f)
-                            )
-                        }
-                    }
-
-                    // Spawn / Navigate Mode Toggle
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                if (slingshotState.isSpawnModeEnabled) Color(0xFFD97706) else Color(0xCC0B0F19)
-                            )
-                            .border(
-                                1.dp,
-                                if (slingshotState.isSpawnModeEnabled) Color(0xFFFBBF24) else Color(0x44F59E0B),
-                                RoundedCornerShape(12.dp)
-                            )
-                            .clickable {
-                                slingshotState.isSpawnModeEnabled = !slingshotState.isSpawnModeEnabled
-                                if (slingshotState.isSpawnModeEnabled) {
-                                    cameraState.stopFollowing()
-                                }
-                            }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                // System info chip
+                val currentAccent = Color(selectedPreset.accentColorHex)
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xCC0B0F19))
+                        .border(
+                            1.dp,
+                            currentAccent.copy(alpha = 0.5f),
+                            RoundedCornerShape(12.dp)
+                        )
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = if (slingshotState.isSpawnModeEnabled) "🚀 SPAWN" else "🔭 NAV",
+                            text = selectedPreset.iconEmoji,
+                            fontSize = 12.sp
+                        )
+                        Text(
+                            text = selectedPreset.title.uppercase(),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
-                            color = if (slingshotState.isSpawnModeEnabled) Color.White else Color(0xFFFCD34D),
-                            letterSpacing = 0.5.sp
+                            color = currentAccent,
+                            letterSpacing = 0.5.sp,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
 
-                // Diagnostics HUD (FPS & Frame Time)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    GlassChip(
-                        text = "${simulationEngine.getRenderSnapshot().count} BODIES",
-                        accentColor = Color(0xFF34D399)
-                    )
-                    GlassChip(
-                        text = "${fps.toInt()} FPS · ${String.format("%.1f", frameTimeMs)}ms",
-                        accentColor = if (fps >= 55f) Color(0xFF38BDF8) else Color(0xFFFBBF24)
-                    )
-                }
-            }
-
-            // Scenario Presets Dropdown Picker
-            AnimatedVisibility(
-                visible = isPresetPickerOpen,
-                enter = fadeIn() + slideInVertically(),
-                exit = fadeOut() + slideOutVertically(),
-                modifier = Modifier.padding(top = 8.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color(0xF00F172A),
-                                    Color(0xF0020617)
-                                )
-                            )
-                        )
-                        .border(1.dp, Color(0x3338BDF8), RoundedCornerShape(16.dp))
-                        .padding(12.dp)
-                ) {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.width(320.dp)
-                    ) {
-                        Text(
-                            text = "CELESTIAL PRESETS",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = Color(0xFF94A3B8),
-                            letterSpacing = 1.sp
-                        )
-
-                        ScenarioPresets.ALL_PRESETS.forEach { preset ->
-                            val isCurrent = preset.id == selectedPreset.id
-                            val accentColor = Color(preset.accentColorHex)
-
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(
-                                        if (isCurrent) accentColor.copy(alpha = 0.15f)
-                                        else Color(0x331E293B)
-                                    )
-                                    .border(
-                                        1.dp,
-                                        if (isCurrent) accentColor else Color(0x22475569),
-                                        RoundedCornerShape(10.dp)
-                                    )
-                                    .clickable {
-                                        isPresetPickerOpen = false
-                                        onSelectPreset(preset)
-                                    }
-                                    .padding(horizontal = 10.dp, vertical = 8.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    Text(
-                                        text = preset.iconEmoji,
-                                        fontSize = 18.sp
-                                    )
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Text(
-                                                text = preset.title,
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = if (isCurrent) accentColor else Color.White
-                                            )
-                                            if (isCurrent) {
-                                                Text(
-                                                    text = "ACTIVE",
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontFamily = FontFamily.Monospace,
-                                                    color = accentColor
-                                                )
-                                            }
-                                        }
-                                        Text(
-                                            text = preset.subtitle,
-                                            fontSize = 11.sp,
-                                            color = Color(0xFF94A3B8)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                // Diagnostics HUD (Compact single-chip telemetry to prevent narrow-screen wrapping)
+                GlassChip(
+                    text = "${simulationEngine.getRenderSnapshot().count} BODIES · ${fps.toInt()} FPS",
+                    accentColor = if (fps >= 55f) Color(0xFF38BDF8) else Color(0xFFFBBF24)
+                )
             }
 
             // Follow Mode Active Indicator
@@ -329,61 +190,7 @@ fun SimulationControlsOverlay(
                 }
             }
 
-            // Spawn Preset Selector Row (visible when Spawn Mode is active)
-            AnimatedVisibility(
-                visible = slingshotState.isSpawnModeEnabled,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.padding(top = 8.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Color(0xEE0B1120))
-                        .border(1.dp, Color(0x44F59E0B), RoundedCornerShape(14.dp))
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "FLING:",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        color = Color(0xFFF59E0B),
-                        letterSpacing = 0.5.sp
-                    )
 
-                    SpawnPreset.entries.forEach { preset ->
-                        val isSelected = slingshotState.selectedPreset == preset
-                        val presetColor = Color(preset.colorHex)
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (isSelected) presetColor.copy(alpha = 0.35f) else Color(0xFF1E293B)
-                                )
-                                .border(
-                                    1.dp,
-                                    if (isSelected) presetColor else Color(0x22FFFFFF),
-                                    RoundedCornerShape(8.dp)
-                                )
-                                .clickable { slingshotState.selectedPreset = preset }
-                                .padding(vertical = 5.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = preset.displayName,
-                                fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSelected) Color.White else Color(0xFF94A3B8)
-                            )
-                        }
-                    }
-                }
-            }
         }
 
         // --- Bottom Control Deck ---
@@ -411,56 +218,104 @@ fun SimulationControlsOverlay(
                     .padding(horizontal = 20.dp, vertical = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Top control buttons row (Play/Pause, Step, Reset Camera)
+                // Primary Control Actions Row (Play/Pause & Fit All)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Play / Pause Button
-                    ControlButton(
-                        text = if (isRunning) "⏸ PAUSE" else "▶ PLAY",
-                        isActive = isRunning,
-                        activeColor = Color(0xFF3B82F6),
-                        onClick = {
-                            if (isRunning) {
-                                simulationEngine.pause()
-                                isRunning = false
-                            } else {
-                                simulationEngine.start()
-                                isRunning = true
+                    // Redesigned Play / Pause Button with dynamic state gradient
+                    Box(
+                        modifier = Modifier
+                            .weight(1.2f)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(
+                                if (isRunning) {
+                                    Brush.horizontalGradient(listOf(Color(0xFF1E40AF), Color(0xFF2563EB)))
+                                } else {
+                                    Brush.horizontalGradient(listOf(Color(0xFF065F46), Color(0xFF059669)))
+                                }
+                            )
+                            .border(
+                                1.dp,
+                                if (isRunning) Color(0xFF60A5FA) else Color(0xFF34D399),
+                                RoundedCornerShape(14.dp)
+                            )
+                            .clickable {
+                                if (isRunning) {
+                                    simulationEngine.pause()
+                                } else {
+                                    simulationEngine.start()
+                                }
                             }
-                        }
-                    )
-
-                    // Single Step (visible when paused)
-                    AnimatedVisibility(
-                        visible = !isRunning,
-                        enter = fadeIn(),
-                        exit = fadeOut()
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        ControlButton(
-                            text = "⏭ STEP",
-                            isActive = false,
-                            activeColor = Color(0xFF8B5CF6),
-                            onClick = {
-                                simulationEngine.stepOnce()
-                            }
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = if (isRunning) "⏸" else "▶",
+                                fontSize = 14.sp,
+                                color = Color.White
+                            )
+                            Text(
+                                text = if (isRunning) "PAUSE" else "PLAY",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color.White,
+                                letterSpacing = 1.sp
+                            )
+                        }
                     }
 
-                    // Reset / Fit Camera Button
-                    ControlButton(
-                        text = "⤢ FIT ALL",
-                        isActive = false,
-                        activeColor = Color(0xFF10B981),
-                        onClick = onResetCamera
-                    )
+                    // Sun-Centered Fit All Button
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFF1E293B))
+                            .border(
+                                1.dp,
+                                Color(0xFF334155),
+                                RoundedCornerShape(14.dp)
+                            )
+                            .clickable(onClick = onResetCamera)
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "⤢",
+                                fontSize = 14.sp,
+                                color = Color(0xFF38BDF8)
+                            )
+                            Text(
+                                text = "FIT ALL",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFFE2E8F0),
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Speed Multiplier row
+                // Speed Multiplier header
+                val formattedSpeed = when {
+                    currentSpeed < 0.95 -> String.format(Locale.US, "%.2fx", currentSpeed)
+                    currentSpeed < 9.95 -> String.format(Locale.US, "%.1fx", currentSpeed)
+                    else -> String.format(Locale.US, "%.0fx", currentSpeed)
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -475,44 +330,68 @@ fun SimulationControlsOverlay(
                     )
 
                     Text(
-                        text = "${String.format("%.1f", currentSpeed)}x",
-                        fontSize = 12.sp,
+                        text = formattedSpeed,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
                         color = Color(0xFF60A5FA)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(2.dp))
 
-                // Speed Quick Selection Chips
+                // Logarithmic Slider from 0.25x to 100x: maps [0f, 1f] via speed = 0.25 * 400^t
+                val sliderPosition = (ln((currentSpeed / 0.25).coerceAtLeast(0.01)) / ln(400.0)).toFloat().coerceIn(0f, 1f)
+
+                Slider(
+                    value = sliderPosition,
+                    onValueChange = { t ->
+                        val raw = 0.25 * 400.0.pow(t.toDouble())
+                        val cleanSpeed = when {
+                            raw < 0.95 -> round(raw * 20.0) / 20.0 // 0.05 increments
+                            raw < 4.8 -> round(raw * 10.0) / 10.0  // 0.1 increments
+                            raw < 19.5 -> round(raw * 2.0) / 2.0   // 0.5 increments
+                            else -> round(raw)                     // 1.0 increments
+                        }.coerceIn(0.25, 100.0)
+
+                        currentSpeed = cleanSpeed
+                        simulationEngine.setSpeedMultiplier(cleanSpeed)
+                    },
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color(0xFF60A5FA),
+                        activeTrackColor = Color(0xFF3B82F6),
+                        inactiveTrackColor = Color(0xFF1E293B)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(28.dp)
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                // Quick Tap Speed Preset Markers
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    listOf(0.25, 1.0, 5.0, 20.0, 100.0).forEach { speed ->
-                        val isSelected = currentSpeed == speed
-                        Box(
+                    listOf(0.25 to "0.25x", 1.0 to "1x", 5.0 to "5x", 20.0 to "20x", 100.0 to "100x").forEach { (speedVal, label) ->
+                        val isSelected = abs(currentSpeed - speedVal) < 0.06
+                        Text(
+                            text = label,
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (isSelected) Color(0xFF60A5FA) else Color(0xFF64748B),
                             modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (isSelected) Color(0xFF2563EB) else Color(0xFF1E293B)
-                                )
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isSelected) Color(0x333B82F6) else Color.Transparent)
                                 .clickable {
-                                    simulationEngine.setSpeedMultiplier(speed)
-                                    currentSpeed = speed
+                                    currentSpeed = speedVal
+                                    simulationEngine.setSpeedMultiplier(speedVal)
                                 }
-                                .padding(vertical = 6.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "${speed.toInt().let { if (it > 0) it else speed }}x",
-                                fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSelected) Color.White else Color(0xFF94A3B8)
-                            )
-                        }
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
                     }
                 }
             }
@@ -549,7 +428,9 @@ private fun GlassChip(
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = FontFamily.Monospace,
                 color = Color(0xFFE2E8F0),
-                letterSpacing = 0.5.sp
+                letterSpacing = 0.5.sp,
+                maxLines = 1,
+                softWrap = false
             )
         }
     }

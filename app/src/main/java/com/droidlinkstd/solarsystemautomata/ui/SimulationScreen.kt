@@ -79,38 +79,39 @@ fun SimulationScreen(
         }
     }
 
-    // Helper to auto-fit camera viewport to all bodies in the snapshot
+    // Helper to auto-fit camera viewport centered directly on the Sun
     val resetCameraAction = {
         val snapshot = simulationEngine.getRenderSnapshot()
         val count = snapshot.count
         if (count > 0) {
-            var minX = Double.MAX_VALUE
-            var minY = Double.MAX_VALUE
-            var maxX = -Double.MAX_VALUE
-            var maxY = -Double.MAX_VALUE
-
+            // Locate the Sun (largest mass or index 0)
+            var sunIndex = 0
+            var maxMass = -1.0
             var i = 0
             while (i < count) {
-                val x = snapshot.posX[i]
-                val y = snapshot.posY[i]
-                if (x < minX) minX = x
-                if (x > maxX) maxX = x
-                if (y < minY) minY = y
-                if (y > maxY) maxY = y
+                if (snapshot.mass[i] > maxMass) {
+                    maxMass = snapshot.mass[i]
+                    sunIndex = i
+                }
+                i++
+            }
+            val sunX = snapshot.posX[sunIndex]
+            val sunY = snapshot.posY[sunIndex]
+
+            // Calculate max orbital distance from the Sun across all celestial bodies
+            var maxRadius = 1.0
+            i = 0
+            while (i < count) {
+                val dx = snapshot.posX[i] - sunX
+                val dy = snapshot.posY[i] - sunY
+                val dist = kotlin.math.hypot(dx, dy)
+                if (dist > maxRadius) {
+                    maxRadius = dist
+                }
                 i++
             }
 
-            // Ensure non-zero bounding box
-            if (minX == maxX) {
-                minX -= 1e10
-                maxX += 1e10
-            }
-            if (minY == maxY) {
-                minY -= 1e10
-                maxY += 1e10
-            }
-
-            cameraState.fitBounds(minX, minY, maxX, maxY, paddingPx = 80f)
+            cameraState.fitCenteredOn(sunX, sunY, maxRadius, paddingPx = 80f)
         } else {
             cameraState.centerX = 0.0
             cameraState.centerY = 0.0
@@ -184,7 +185,9 @@ fun SimulationScreen(
             },
             onSelectBody = { hitIndex ->
                 selectedBodyIndex = hitIndex
-            }
+            },
+            selectedBodyIndex = selectedBodyIndex,
+            onFirstLayout = resetCameraAction
         )
 
         // 2. Floating Body Telemetry Inspector Card
@@ -224,7 +227,6 @@ fun SimulationScreen(
             cameraState = cameraState,
             fps = currentFps,
             frameTimeMs = currentFrameTimeMs,
-            slingshotState = slingshotState,
             onResetCamera = resetCameraAction,
             selectedPreset = currentPreset,
             onSelectPreset = onSelectPreset

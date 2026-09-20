@@ -179,4 +179,29 @@ class CameraState(
 
         zoom = min(zoomX, zoomY).coerceIn(minZoom, maxZoom)
     }
+
+    /**
+     * Centers the camera directly on ([focalX], [focalY]) (e.g. the Sun) and sets zoom
+     * so that all orbiting bodies out to [maxRadius] fit comfortably within the viewport.
+     * Automatically disengages follow mode.
+     */
+    fun fitCenteredOn(
+        focalX: Double,
+        focalY: Double,
+        maxRadius: Double,
+        paddingPx: Float = 80f
+    ) {
+        stopFollowing()
+        centerX = focalX
+        centerY = focalY
+
+        val availableWidth = max(viewportWidth - paddingPx * 2f, 100f)
+        val availableHeight = max(viewportHeight - paddingPx * 2f, 100f)
+        val minHalfDim = min(availableWidth, availableHeight) * 0.5f
+
+        val safeRadius = if (maxRadius <= 0.0) 1.0 else maxRadius
+        val targetZoom = (minHalfDim / safeRadius).toFloat()
+
+        zoom = targetZoom.coerceIn(minZoom, maxZoom)
+    }
 }
