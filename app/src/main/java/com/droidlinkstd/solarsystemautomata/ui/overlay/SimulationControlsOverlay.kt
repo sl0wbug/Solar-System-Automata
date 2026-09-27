@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import com.droidlinkstd.solarsystemautomata.domain.physics.ScenarioPreset
+import com.droidlinkstd.solarsystemautomata.domain.physics.ScenarioPresetId
 import com.droidlinkstd.solarsystemautomata.domain.physics.ScenarioPresets
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -72,8 +73,11 @@ fun SimulationControlsOverlay(
     frameTimeMs: Float,
     onResetCamera: () -> Unit,
     modifier: Modifier = Modifier,
-    selectedPreset: ScenarioPreset = ScenarioPresets.SolarSystem,
-    onSelectPreset: (ScenarioPreset) -> Unit = {}
+    selectedPreset: ScenarioPreset = ScenarioPresets.SolarSystemOverview,
+    onSelectPreset: (ScenarioPreset) -> Unit = {},
+    activePlanetName: String? = null,
+    onSelectPlanetTab: (String?) -> Unit = {},
+    isTransitioning: Boolean = false
 ) {
     val isRunning by simulationEngine.isRunningFlow.collectAsState()
     var currentSpeed by remember { mutableDoubleStateOf(simulationEngine.speedMultiplier) }
@@ -86,48 +90,88 @@ fun SimulationControlsOverlay(
             .navigationBarsPadding()
             .padding(16.dp)
     ) {
-        // --- Top Telemetry HUD ---
+        // --- Top Telemetry HUD & Navigation Deck ---
         Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .fillMaxWidth()
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            val isSolarRelated = selectedPreset.id == ScenarioPresetId.SOLAR_SYSTEM ||
+                    selectedPreset.id == ScenarioPresetId.SOLAR_SYSTEM_OVERVIEW ||
+                    selectedPreset.id == ScenarioPresetId.PLANET_SUBSYSTEM
+
+            if (isSolarRelated) {
+                PlanetNavigationBar(
+                    selectedPlanet = activePlanetName,
+                    onSelectPlanet = onSelectPlanetTab,
+                    onOpenPresetPicker = { isPresetPickerOpen = true },
+                    isTransitioning = isTransitioning
+                )
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // System info chip
                 val currentAccent = Color(selectedPreset.accentColorHex)
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xCC0B0F19))
-                        .border(
-                            1.dp,
-                            currentAccent.copy(alpha = 0.5f),
-                            RoundedCornerShape(12.dp)
-                        )
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                if (activePlanetName != null) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xEE0F172A))
+                            .border(1.dp, currentAccent.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                            .clickable { onSelectPlanetTab(null) }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
-                        Text(
-                            text = selectedPreset.iconEmoji,
-                            fontSize = 12.sp
-                        )
-                        Text(
-                            text = selectedPreset.title.uppercase(),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = currentAccent,
-                            letterSpacing = 0.5.sp,
-                            maxLines = 1,
-                            softWrap = false
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(text = "←", fontSize = 12.sp, color = currentAccent, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "SOLAR SYSTEM",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color.White
+                            )
+                        }
+                    }
+                } else {
+                    // System info chip
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xCC0B0F19))
+                            .border(
+                                1.dp,
+                                currentAccent.copy(alpha = 0.5f),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .clickable { isPresetPickerOpen = true }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = selectedPreset.iconEmoji,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                text = selectedPreset.title.uppercase(),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = currentAccent,
+                                letterSpacing = 0.5.sp,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
                     }
                 }
 
@@ -392,6 +436,121 @@ fun SimulationControlsOverlay(
                                 }
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         )
+                    }
+                }
+            }
+        }
+
+        // Transition Banner Overlay
+        AnimatedVisibility(
+            visible = isTransitioning,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xEE0B0F19))
+                    .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 20.dp, vertical = 14.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(text = "🚀", fontSize = 16.sp)
+                    Text(
+                        text = "WARPING TO PLANET SUBSYSTEM...",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color(0xFFBAE6FD),
+                        letterSpacing = 1.sp
+                    )
+                }
+            }
+        }
+
+        // Scenario Presets Picker Dialog
+        if (isPresetPickerOpen) {
+            androidx.compose.ui.window.Dialog(onDismissRequest = { isPresetPickerOpen = false }) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color(0xF20B0F19),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x4460A5FA)),
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "CANONICAL SCENARIOS",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color.White,
+                                letterSpacing = 1.sp
+                            )
+                            Text(
+                                text = "✕",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF94A3B8),
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .clickable { isPresetPickerOpen = false }
+                                    .padding(4.dp)
+                            )
+                        }
+
+                        ScenarioPresets.ALL_PRESETS.forEach { preset ->
+                            val isSelected = selectedPreset.id == preset.id && activePlanetName == null
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (isSelected) Color(0x3360A5FA) else Color(0x221E293B))
+                                    .border(
+                                        1.dp,
+                                        if (isSelected) Color(0xFF60A5FA) else Color(0x22475569),
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable {
+                                        onSelectPreset(preset)
+                                        isPresetPickerOpen = false
+                                    }
+                                    .padding(12.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text(text = preset.iconEmoji, fontSize = 20.sp)
+                                    Column {
+                                        Text(
+                                            text = preset.title,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                        Text(
+                                            text = preset.subtitle,
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF94A3B8)
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -179,6 +179,27 @@ class SimulationPaintCache {
 
     val saturnRingRectOuter = RectF()
     val saturnRingRectInner = RectF()
+
+    val orbitTrackPaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.2f
+        isAntiAlias = true
+        color = 0x3360A5FA.toInt()
+    }
+
+    val orbitTrackGlowPaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3.5f
+        isAntiAlias = true
+        color = 0x1460A5FA.toInt()
+    }
+
+    val barycenterCrossPaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.0f
+        isAntiAlias = true
+        color = 0x55F59E0B.toInt()
+    }
 }
 
 /**
@@ -366,6 +387,42 @@ fun SimulationCanvas(
         val count = snapshot.count
         if (count <= 0) return@Canvas
 
+        // 2.5. Draw preloaded orbital tracks (Sun barycenter trace, planetary orbits, or lunar subsystem orbits)
+        val currentPreset = simulationEngine.currentPreset
+        val preloadedTracks = currentPreset.preloadedTracks
+        if (preloadedTracks.isNotEmpty() && count > 0) {
+            val centerSx = cameraState.worldToScreenX(snapshot.posX[0])
+            val centerSy = cameraState.worldToScreenY(snapshot.posY[0])
+            val maxScreenDim = maxOf(canvasWidth, canvasHeight) * 3f
+
+            for (track in preloadedTracks) {
+                val (tCx, tCy) = if (track.isBarycenterTrack) {
+                    val bSx = cameraState.worldToScreenX(0.0)
+                    val bSy = cameraState.worldToScreenY(0.0)
+                    val crossLen = 6f
+                    nativeCanvas.drawLine(bSx - crossLen, bSy, bSx + crossLen, bSy, paintCache.barycenterCrossPaint)
+                    nativeCanvas.drawLine(bSx, bSy - crossLen, bSx, bSy + crossLen, paintCache.barycenterCrossPaint)
+                    bSx to bSy
+                } else {
+                    centerSx to centerSy
+                }
+
+                val rScreen = (track.radiusAU * cameraState.zoom).toFloat()
+                if (rScreen in 3f..maxScreenDim) {
+                    val trackColor = track.colorHex.toInt()
+                    val r = (trackColor shr 16) and 0xFF
+                    val g = (trackColor shr 8) and 0xFF
+                    val b = trackColor and 0xFF
+
+                    paintCache.orbitTrackGlowPaint.setARGB(18, r, g, b)
+                    nativeCanvas.drawCircle(tCx, tCy, rScreen, paintCache.orbitTrackGlowPaint)
+
+                    paintCache.orbitTrackPaint.setARGB(48, r, g, b)
+                    nativeCanvas.drawCircle(tCx, tCy, rScreen, paintCache.orbitTrackPaint)
+                }
+            }
+        }
+
         // 3. Dynamic distance threshold for trail sampling (2 screen pixels squared)
         val zoomD = cameraState.zoom.toDouble()
         val minDistanceThresholdSq = if (zoomD > 1e-12) 4.0 / (zoomD * zoomD) else 0.0
@@ -430,16 +487,34 @@ fun SimulationCanvas(
             // Cull bodies completely outside the screen viewport (with margin)
             if (sx >= -120f && sx <= canvasWidth + 120f && sy >= -120f && sy <= canvasHeight + 120f) {
                 val radiusModel = snapshot.radius[bodyIndex]
-                val radiusPx = CelestialVisualScale.calculateVisualRadiusPx(radiusModel, zoomFactor)
+                val name = snapshot.names[bodyIndex]
+                val isSun = name.contains("Sun", ignoreCase = true) || snapshot.mass[bodyIndex] >= 10000.0
+                val isSaturn = name.equals("Saturn", ignoreCase = true)
+
+                var radiusPx = CelestialVisualScale.calculateVisualRadiusPx(radiusModel, zoomFactor)
+                if (bodyIndex == 0 && count > 1 && !isSun) {
+                    var minOrbitDist = Double.MAX_VALUE
+                    val checkCount = minOf(count, 12)
+                    var i = 1
+                    while (i < checkCount) {
+                        val dx = snapshot.posX[i] - wx
+                        val dy = snapshot.posY[i] - wy
+                        val d = kotlin.math.hypot(dx, dy)
+                        if (d < minOrbitDist) minOrbitDist = d
+                        i++
+                    }
+                    if (minOrbitDist < Double.MAX_VALUE) {
+                        val maxSafeRadiusPx = (minOrbitDist * cameraState.zoom * 0.70).toFloat()
+                        if (maxSafeRadiusPx in 4f..radiusPx) {
+                            radiusPx = maxSafeRadiusPx
+                        }
+                    }
+                }
 
                 val bodyColor = snapshot.color[bodyIndex]
                 val r = (bodyColor shr 16) and 0xFF
                 val g = (bodyColor shr 8) and 0xFF
                 val b = bodyColor and 0xFF
-
-                val name = snapshot.names[bodyIndex]
-                val isSun = name.contains("Sun", ignoreCase = true) || snapshot.mass[bodyIndex] >= 10000.0
-                val isSaturn = name.equals("Saturn", ignoreCase = true)
 
                 if (isSun) {
                     // Radiant multi-layer solar corona

@@ -46,7 +46,8 @@ fun BodyInspectorCard(
     onToggleFollow: () -> Unit,
     onDeleteBody: () -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onExploreSubsystem: (() -> Unit)? = null
 ) {
     if (bodyIndex !in 0 until snapshot.count) return
 
@@ -184,6 +185,45 @@ fun BodyInspectorCard(
                         label = "RADIUS",
                         value = String.format(Locale.US, "%.1f R⊕", radius)
                     )
+                }
+            }
+
+            // Explore Subsystem Action Button
+            if (onExploreSubsystem != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    bodyColor.copy(alpha = 0.35f),
+                                    Color(0x3338BDF8)
+                                )
+                            )
+                        )
+                        .border(1.dp, bodyColor.copy(alpha = 0.7f), RoundedCornerShape(10.dp))
+                        .clickable { onExploreSubsystem() }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "🪐",
+                            fontSize = 12.sp
+                        )
+                        Text(
+                            text = "EXPLORE SUBSYSTEM",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color.White,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
                 }
             }
 

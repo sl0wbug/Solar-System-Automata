@@ -9,6 +9,9 @@ import androidx.compose.ui.geometry.Offset
 import com.droidlinkstd.solarsystemautomata.domain.physics.RenderSnapshot
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.ln
+import kotlin.math.exp
+import kotlinx.coroutines.delay
 
 /**
  * Manages the astronomical camera viewport state and coordinate projections.
@@ -203,5 +206,48 @@ class CameraState(
         val targetZoom = (minHalfDim / safeRadius).toFloat()
 
         zoom = targetZoom.coerceIn(minZoom, maxZoom)
+    }
+
+    /**
+     * Smoothly interpolates the camera center coordinates and zoom towards
+     * the specified target over [durationMs].
+     */
+    suspend fun animateTo(
+        targetCenterX: Double,
+        targetCenterY: Double,
+        targetZoom: Float,
+        durationMs: Long = 550L
+    ) {
+        stopFollowing()
+        val startX = centerX
+        val startY = centerY
+        val startZoom = zoom
+        val startLnZoom = ln(startZoom.toDouble())
+        val endLnZoom = ln(targetZoom.coerceIn(minZoom, maxZoom).toDouble())
+
+        val startTime = System.nanoTime()
+        val durationNanos = durationMs * 1_000_000.0
+
+        while (true) {
+            val now = System.nanoTime()
+            val elapsed = (now - startTime) / durationNanos
+            if (elapsed >= 1.0) {
+                centerX = targetCenterX
+                centerY = targetCenterY
+                zoom = targetZoom.coerceIn(minZoom, maxZoom)
+                break
+            }
+            // Cubic easeInOut easing
+            val t = elapsed.toFloat()
+            val ease = t * t * (3f - 2f * t)
+            val easeD = ease.toDouble()
+
+            centerX = startX + (targetCenterX - startX) * easeD
+            centerY = startY + (targetCenterY - startY) * easeD
+            val currentLnZoom = startLnZoom + (endLnZoom - startLnZoom) * easeD
+            zoom = exp(currentLnZoom).toFloat().coerceIn(minZoom, maxZoom)
+
+            delay(16)
+        }
     }
 }

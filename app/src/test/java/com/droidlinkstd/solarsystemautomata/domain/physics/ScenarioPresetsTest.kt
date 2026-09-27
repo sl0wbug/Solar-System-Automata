@@ -208,4 +208,103 @@ class ScenarioPresetsTest {
         assertEquals(3, snapshot2.count)
         assertEquals("Body 3 (m=3)", snapshot2.names[0])
     }
+
+    @Test
+    fun testSolarSystemOverview_nineBodiesAndPreloadedTracks() {
+        val preset = ScenarioPresets.SolarSystemOverview
+        assertEquals(ScenarioPresetId.SOLAR_SYSTEM_OVERVIEW, preset.id)
+        val bodies = preset.createBodies()
+        // Exactly 1 Sun + 8 Planets = 9 Bodies
+        assertEquals(9, bodies.size)
+        assertEquals("Sun", bodies[0].name)
+
+        val planetNames = listOf("Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune")
+        for (name in planetNames) {
+            assertTrue("Solar System Overview must contain $name", bodies.any { it.name == name })
+        }
+
+        // Net momentum must be conserved
+        var totalPx = 0.0
+        var totalPy = 0.0
+        for (b in bodies) {
+            totalPx += b.mass * b.velocityX
+            totalPy += b.mass * b.velocityY
+        }
+        assertEquals(0.0, totalPx, 1e-9)
+        assertEquals(0.0, totalPy, 1e-9)
+
+        // Preloaded tracks must include the Sun's barycenter track + 8 planetary tracks = 9 tracks
+        val tracks = preset.preloadedTracks
+        assertEquals(9, tracks.size)
+        assertTrue("Must include Sun barycenter track", tracks.any { it.isBarycenterTrack })
+        for (name in planetNames) {
+            assertTrue("Must include preloaded track for $name", tracks.any { it.name == name })
+        }
+    }
+
+    @Test
+    fun testPlanetSubsystems_keplerianCircularOrbitsAndMomentumConservation() {
+        // 1. Earth Subsystem: Earth + Luna
+        val earthSubsystem = ScenarioPresets.createPlanetSubsystem("Earth")
+        assertEquals(ScenarioPresetId.PLANET_SUBSYSTEM, earthSubsystem.id)
+        val earthBodies = earthSubsystem.createBodies()
+        assertEquals(2, earthBodies.size)
+        assertEquals("Earth", earthBodies[0].name)
+        assertEquals("Moon", earthBodies[1].name)
+        assertEquals(1, earthSubsystem.preloadedTracks.size)
+
+        var pX = 0.0
+        var pY = 0.0
+        for (b in earthBodies) {
+            pX += b.mass * b.velocityX
+            pY += b.mass * b.velocityY
+        }
+        assertEquals("Earth-Moon system net Px must be 0", 0.0, pX, 1e-9)
+        assertEquals("Earth-Moon system net Py must be 0", 0.0, pY, 1e-9)
+
+        // 2. Jupiter Subsystem: Jupiter + 95 moons = 96 bodies
+        val jupiterSubsystem = ScenarioPresets.createPlanetSubsystem("Jupiter")
+        val jupiterBodies = jupiterSubsystem.createBodies()
+        assertEquals(96, jupiterBodies.size)
+        assertEquals("Jupiter", jupiterBodies[0].name)
+        assertEquals(95, jupiterSubsystem.preloadedTracks.size)
+
+        // 3. Saturn Subsystem: Saturn + 146 moons = 147 bodies
+        val saturnSubsystem = ScenarioPresets.createPlanetSubsystem("Saturn")
+        val saturnBodies = saturnSubsystem.createBodies()
+        assertEquals(147, saturnBodies.size)
+        assertEquals("Saturn", saturnBodies[0].name)
+        assertEquals(146, saturnSubsystem.preloadedTracks.size)
+
+        // 4. Mercury Subsystem: Mercury (0 moons) = 1 body
+        val mercurySubsystem = ScenarioPresets.createPlanetSubsystem("Mercury")
+        val mercuryBodies = mercurySubsystem.createBodies()
+        assertEquals(1, mercuryBodies.size)
+        assertEquals("Mercury", mercuryBodies[0].name)
+        assertEquals(0, mercurySubsystem.preloadedTracks.size)
+    }
+
+    @Test
+    fun testPlanetList_containsEightPlanetsWithSymbolsAndCounts() {
+        val planets = ScenarioPresets.getPlanetList()
+        assertEquals(8, planets.size)
+
+        val expected = mapOf(
+            "Mercury" to 0,
+            "Venus" to 0,
+            "Earth" to 1,
+            "Mars" to 2,
+            "Jupiter" to 95,
+            "Saturn" to 146,
+            "Uranus" to 28,
+            "Neptune" to 16
+        )
+
+        for ((name, expectedMoons) in expected) {
+            val planet = planets.firstOrNull { it.name == name }
+            assertNotNull("Planet $name must be in planet list", planet)
+            assertEquals("Moon count for $name must match", expectedMoons, planet!!.moonCount)
+            assertTrue("Symbol for $name must not be empty", planet.symbol.isNotEmpty())
+        }
+    }
 }

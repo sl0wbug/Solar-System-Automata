@@ -34,6 +34,9 @@ import com.droidlinkstd.solarsystemautomata.ui.rendering.OrbitalTrailBuffer
 import com.droidlinkstd.solarsystemautomata.ui.rendering.ShockwaveBuffer
 import com.droidlinkstd.solarsystemautomata.ui.rendering.SimulationCanvas
 import com.droidlinkstd.solarsystemautomata.ui.rendering.StarfieldBuffer
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import com.droidlinkstd.solarsystemautomata.domain.physics.ScenarioPresetId
 import com.droidlinkstd.solarsystemautomata.ui.interaction.SlingshotState
 
 /**
@@ -57,9 +60,12 @@ fun SimulationScreen(
 ) {
     var currentFps by remember { mutableFloatStateOf(60f) }
     var currentFrameTimeMs by remember { mutableFloatStateOf(16.6f) }
-    var currentPreset by remember { mutableStateOf(ScenarioPresets.SolarSystem) }
+    var currentPreset by remember { mutableStateOf(ScenarioPresets.SolarSystemOverview) }
+    var activePlanetView by remember { mutableStateOf<String?>(null) }
+    var isTransitioning by remember { mutableStateOf(false) }
     var selectedBodyIndex by remember { mutableStateOf<Int?>(null) }
     val slingshotState = remember { SlingshotState() }
+    val coroutineScope = rememberCoroutineScope()
 
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -79,47 +85,131 @@ fun SimulationScreen(
         }
     }
 
-    // Helper to auto-fit camera viewport centered directly on the Sun
+    // Helper to auto-fit camera viewport centered directly on the Sun or active central planet
     val resetCameraAction = {
         val snapshot = simulationEngine.getRenderSnapshot()
         val count = snapshot.count
         if (count > 0) {
-            // Locate the Sun (largest mass or index 0)
-            var sunIndex = 0
-            var maxMass = -1.0
-            var i = 0
-            while (i < count) {
-                if (snapshot.mass[i] > maxMass) {
-                    maxMass = snapshot.mass[i]
-                    sunIndex = i
+            val planetName = activePlanetView
+            if (planetName != null) {
+                // Fixed on central planet in isolated subsystem view
+                val maxRadius = ScenarioPresets.getSubsystemDefaultRadiusAU(planetName)
+                cameraState.fitCenteredOn(snapshot.posX[0], snapshot.posY[0], maxRadius, paddingPx = 80f)
+                cameraState.followBody(0)
+            } else {
+                // Locate the Sun (largest mass or index 0)
+                var sunIndex = 0
+                var maxMass = -1.0
+                var i = 0
+                while (i < count) {
+                    if (snapshot.mass[i] > maxMass) {
+                        maxMass = snapshot.mass[i]
+                        sunIndex = i
+                    }
+                    i++
                 }
-                i++
-            }
-            val sunX = snapshot.posX[sunIndex]
-            val sunY = snapshot.posY[sunIndex]
+                val sunX = snapshot.posX[sunIndex]
+                val sunY = snapshot.posY[sunIndex]
 
-            // Calculate max orbital distance from the Sun across all celestial bodies
-            var maxRadius = 1.0
-            i = 0
-            while (i < count) {
-                val dx = snapshot.posX[i] - sunX
-                val dy = snapshot.posY[i] - sunY
-                val dist = kotlin.math.hypot(dx, dy)
-                if (dist > maxRadius) {
-                    maxRadius = dist
+                // Calculate max orbital distance from the Sun across all celestial bodies
+                var maxRadius = 1.0
+                i = 0
+                while (i < count) {
+                    val dx = snapshot.posX[i] - sunX
+                    val dy = snapshot.posY[i] - sunY
+                    val dist = kotlin.math.hypot(dx, dy)
+                    if (dist > maxRadius) {
+                        maxRadius = dist
+                    }
+                    i++
                 }
-                i++
-            }
 
-            cameraState.fitCenteredOn(sunX, sunY, maxRadius, paddingPx = 80f)
+                cameraState.fitCenteredOn(sunX, sunY, maxRadius, paddingPx = 80f)
+            }
         } else {
             cameraState.centerX = 0.0
             cameraState.centerY = 0.0
         }
     }
 
+    // Handles selecting a planet tab from the top navigation bar or returning to overview
+    val onSelectPlanetTab: (String?) -> Unit = { targetPlanet ->
+        if (targetPlanet == null) {
+            // Return to Solar System Overview
+            if (activePlanetView != null || currentPreset.id != ScenarioPresetId.SOLAR_SYSTEM_OVERVIEW) {
+                activePlanetView = null
+                currentPreset = ScenarioPresets.SolarSystemOverview
+                selectedBodyIndex = null
+                simulationEngine.loadScenario(ScenarioPresets.SolarSystemOverview)
+                trailBuffer.clear()
+                shockwaveBuffer.clear()
+                cameraState.stopFollowing()
+                resetCameraAction()
+            }
+        } else {
+            // Target is a specific planet subsystem
+            if (activePlanetView == targetPlanet) {
+                // Already in this subsystem: re-center camera on planet
+                val maxR = ScenarioPresets.getSubsystemDefaultRadiusAU(targetPlanet)
+                cameraState.fitCenteredOn(0.0, 0.0, maxR, paddingPx = 80f)
+                cameraState.followBody(0)
+            } else if (activePlanetView == null) {
+                // Currently in Overview: execute live fly-in animation to target planet!
+                coroutineScope.launch {
+                    isTransitioning = true
+                    val snapshot = simulationEngine.getRenderSnapshot()
+                    var targetX = 0.0
+                    var targetY = 0.0
+                    var found = false
+                    for (i in 0 until snapshot.count) {
+                        if (snapshot.names[i].equals(targetPlanet, ignoreCase = true)) {
+                            targetX = snapshot.posX[i]
+                            targetY = snapshot.posY[i]
+                            found = true
+                            break
+                        }
+                    }
+                    if (found) {
+                        // Live animation detecting planet position and zooming into it
+                        cameraState.animateTo(
+                            targetCenterX = targetX,
+                            targetCenterY = targetY,
+                            targetZoom = (cameraState.zoom * 6f).coerceIn(120f, 600f),
+                            durationMs = 500L
+                        )
+                    }
+                    // Transition to dedicated planet subsystem
+                    activePlanetView = targetPlanet
+                    val subsystemPreset = ScenarioPresets.createPlanetSubsystem(targetPlanet)
+                    currentPreset = subsystemPreset
+                    selectedBodyIndex = null
+                    simulationEngine.loadScenario(subsystemPreset)
+                    trailBuffer.clear()
+                    shockwaveBuffer.clear()
+                    val maxR = ScenarioPresets.getSubsystemDefaultRadiusAU(targetPlanet)
+                    cameraState.fitCenteredOn(0.0, 0.0, maxR, paddingPx = 80f)
+                    cameraState.followBody(0)
+                    isTransitioning = false
+                }
+            } else {
+                // Switching directly from one planet subsystem to another
+                activePlanetView = targetPlanet
+                val subsystemPreset = ScenarioPresets.createPlanetSubsystem(targetPlanet)
+                currentPreset = subsystemPreset
+                selectedBodyIndex = null
+                simulationEngine.loadScenario(subsystemPreset)
+                trailBuffer.clear()
+                shockwaveBuffer.clear()
+                val maxR = ScenarioPresets.getSubsystemDefaultRadiusAU(targetPlanet)
+                cameraState.fitCenteredOn(0.0, 0.0, maxR, paddingPx = 80f)
+                cameraState.followBody(0)
+            }
+        }
+    }
+
     // Helper to switch scenario presets cleanly and reset buffers
     val onSelectPreset: (ScenarioPreset) -> Unit = { preset ->
+        activePlanetView = null
         currentPreset = preset
         selectedBodyIndex = null
         simulationEngine.loadScenario(preset)
@@ -203,6 +293,11 @@ fun SimulationScreen(
             selectedBodyIndex?.let { index ->
                 val snapshot = simulationEngine.getRenderSnapshot()
                 if (index in 0 until snapshot.count) {
+                    val bodyName = snapshot.names[index]
+                    val isPlanet = ScenarioPresets.isKnownPlanet(bodyName)
+                    val isCurrentPlanetSubsystem = activePlanetView?.equals(bodyName, ignoreCase = true) == true
+                    val canExploreSubsystem = isPlanet && !isCurrentPlanetSubsystem
+
                     BodyInspectorCard(
                         snapshot = snapshot,
                         bodyIndex = index,
@@ -215,7 +310,10 @@ fun SimulationScreen(
                             }
                         },
                         onDeleteBody = onDeleteSelectedBody,
-                        onClose = { selectedBodyIndex = null }
+                        onClose = { selectedBodyIndex = null },
+                        onExploreSubsystem = if (canExploreSubsystem) {
+                            { onSelectPlanetTab(bodyName) }
+                        } else null
                     )
                 }
             }
@@ -229,7 +327,10 @@ fun SimulationScreen(
             frameTimeMs = currentFrameTimeMs,
             onResetCamera = resetCameraAction,
             selectedPreset = currentPreset,
-            onSelectPreset = onSelectPreset
+            onSelectPreset = onSelectPreset,
+            activePlanetName = activePlanetView,
+            onSelectPlanetTab = onSelectPlanetTab,
+            isTransitioning = isTransitioning
         )
     }
 }

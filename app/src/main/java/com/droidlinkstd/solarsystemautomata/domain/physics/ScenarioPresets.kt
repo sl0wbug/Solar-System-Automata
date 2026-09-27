@@ -10,11 +10,38 @@ import kotlin.math.sqrt
  */
 enum class ScenarioPresetId {
     SOLAR_SYSTEM,
+    SOLAR_SYSTEM_OVERVIEW,
+    PLANET_SUBSYSTEM,
     FIGURE_EIGHT,
     BINARY_STAR,
     LAGRANGE_POINTS,
     CHAOTIC_THREE_BODY
 }
+
+/**
+ * Pre-calculated orbital trajectory path for instant hardware-accelerated viewport rendering.
+ */
+data class PreloadedOrbitTrack(
+    val radiusAU: Double,
+    val colorHex: Long,
+    val name: String,
+    val isBarycenterTrack: Boolean = false,
+    val isRetrograde: Boolean = false
+)
+
+/**
+ * Domain metadata representing a major planet for top-bar navigation tabs.
+ */
+data class PlanetInfo(
+    val name: String,
+    val symbol: String,
+    val distanceAU: Double,
+    val massEarth: Double,
+    val radiusEarth: Double,
+    val colorHex: Long,
+    val moonCount: Int,
+    val description: String
+)
 
 /**
  * Encapsulates a complete celestial scenario preset configuration.
@@ -34,6 +61,7 @@ data class ScenarioPreset(
     val g: Double = SimulationEngine.DEFAULT_G,
     val softening: Double = SimulationEngine.DEFAULT_SOFTENING,
     val defaultSpeed: Double = 1.0,
+    val preloadedTracks: List<PreloadedOrbitTrack> = emptyList(),
     private val bodiesFactory: () -> List<CelestialBody>
 ) {
     fun createBodies(): List<CelestialBody> = bodiesFactory()
@@ -60,18 +88,37 @@ object ScenarioPresets {
     // ---------------------------------------------------------------------------------------------
     // 1. Solar System (Default)
     // ---------------------------------------------------------------------------------------------
-    val SolarSystem = ScenarioPreset(
-        id = ScenarioPresetId.SOLAR_SYSTEM,
-        title = "Solar System",
-        subtitle = "Sun, 8 Planets & 288 Moons",
-        description = "Our home planetary system calibrated in AU and Earth masses, featuring all 288 confirmed natural satellites.",
-        iconEmoji = "🌌",
-        accentColorHex = 0xFF60A5FA, // Sky Blue
-        g = 1.0 / 333000.0,
-        softening = 0.0001,
-        defaultSpeed = 0.5,
-        bodiesFactory = { createSolarSystemBodies() }
-    )
+    val SolarSystem: ScenarioPreset by lazy {
+        ScenarioPreset(
+            id = ScenarioPresetId.SOLAR_SYSTEM,
+            title = "Solar System",
+            subtitle = "Sun, 8 Planets & 288 Moons",
+            description = "Our home planetary system calibrated in AU and Earth masses, featuring all 288 confirmed natural satellites.",
+            iconEmoji = "🌌",
+            accentColorHex = 0xFF60A5FA, // Sky Blue
+            g = 1.0 / 333000.0,
+            softening = 0.0001,
+            defaultSpeed = 0.5,
+            preloadedTracks = buildSolarSystemOverviewTracks(),
+            bodiesFactory = { createSolarSystemBodies() }
+        )
+    }
+
+    val SolarSystemOverview: ScenarioPreset by lazy {
+        ScenarioPreset(
+            id = ScenarioPresetId.SOLAR_SYSTEM_OVERVIEW,
+            title = "Solar System",
+            subtitle = "Sun & 8 Major Planets",
+            description = "Our home planetary system calibrated in AU and Earth masses, featuring the Sun and 8 major planets with precomputed Keplerian orbits.",
+            iconEmoji = "☀️",
+            accentColorHex = 0xFFFFD700, // Solar Gold
+            g = 1.0 / 333000.0,
+            softening = 0.0001,
+            defaultSpeed = 0.5,
+            preloadedTracks = buildSolarSystemOverviewTracks(),
+            bodiesFactory = { createSolarSystemOverviewBodies() }
+        )
+    }
 
     private data class MoonSpec(
         val name: String,
@@ -430,11 +477,8 @@ object ScenarioPresets {
         moon("S/2021 N 1", 0.2750, 0.02, 0.00001, 0xFF94A3B8L, "Outer irregular moon S/2021 N 1.")
     )
 
-    private fun createSolarSystemBodies(): List<CelestialBody> {
-        val sunMass = 333000.0
-        val g = 1.0 / sunMass
-
-        val planetsData = listOf(
+    private val planetsData: List<PlanetSpec> by lazy {
+        listOf(
             PlanetSpec(
                 name = "Mercury",
                 distance = 0.39,
@@ -514,6 +558,79 @@ object ScenarioPresets {
                 moons = buildNeptunianMoons()
             )
         )
+    }
+
+    val PLANET_SPECS: List<PlanetInfo> by lazy {
+        planetsData.map { p ->
+            PlanetInfo(
+                name = p.name,
+                symbol = getPlanetSymbol(p.name),
+                distanceAU = p.distance,
+                massEarth = p.mass,
+                radiusEarth = p.radius,
+                colorHex = p.colorHex,
+                moonCount = p.moons.size,
+                description = p.description
+            )
+        }
+    }
+
+    fun getPlanetList(): List<PlanetInfo> = PLANET_SPECS
+
+    fun getPlanetSymbol(name: String): String = when (name.lowercase()) {
+        "sun" -> "☀️"
+        "mercury" -> "☿"
+        "venus" -> "♀"
+        "earth" -> "🜨"
+        "mars" -> "♂"
+        "jupiter" -> "♃"
+        "saturn" -> "♄"
+        "uranus" -> "⛢"
+        "neptune" -> "♆"
+        else -> "🪐"
+    }
+
+    fun getSubsystemDefaultRadiusAU(planetName: String): Double = when (planetName.lowercase()) {
+        "mercury" -> 0.004
+        "venus" -> 0.005
+        "earth" -> 0.0065
+        "mars" -> 0.006
+        "jupiter" -> 0.035
+        "saturn" -> 0.032
+        "uranus" -> 0.040
+        "neptune" -> 0.035
+        else -> 0.010
+    }
+
+    fun isKnownPlanet(name: String): Boolean =
+        planetsData.any { it.name.equals(name, ignoreCase = true) }
+
+    private fun buildSolarSystemOverviewTracks(): List<PreloadedOrbitTrack> {
+        val tracks = ArrayList<PreloadedOrbitTrack>(10)
+        // Barycenter orbital wobble of the Sun
+        tracks.add(
+            PreloadedOrbitTrack(
+                radiusAU = 0.008,
+                colorHex = 0xFFFFD700L,
+                name = "Sun Barycenter Wobble",
+                isBarycenterTrack = true
+            )
+        )
+        for (p in planetsData) {
+            tracks.add(
+                PreloadedOrbitTrack(
+                    radiusAU = p.distance,
+                    colorHex = p.colorHex,
+                    name = p.name
+                )
+            )
+        }
+        return tracks
+    }
+
+    private fun createSolarSystemBodies(): List<CelestialBody> {
+        val sunMass = 333000.0
+        val g = 1.0 / sunMass
 
         val planetBodies = ArrayList<CelestialBody>(300)
         var planetIdCounter = 1
@@ -606,6 +723,186 @@ object ScenarioPresets {
         val list = ArrayList<CelestialBody>(planetBodies.size + 1)
         list.add(sunBody)
         list.addAll(planetBodies)
+        return list
+    }
+
+    private fun createSolarSystemOverviewBodies(): List<CelestialBody> {
+        val sunMass = 333000.0
+        val g = 1.0 / sunMass
+
+        val planetBodies = ArrayList<CelestialBody>(planetsData.size)
+        var planetIdCounter = 1
+
+        for (planet in planetsData) {
+            val cosTheta = cos(planet.angleRad)
+            val sinTheta = sin(planet.angleRad)
+            val planetSpeed = sqrt(g * sunMass / planet.distance)
+            val planetPosX = planet.distance * cosTheta
+            val planetPosY = planet.distance * sinTheta
+            val planetVelX = -planetSpeed * sinTheta
+            val planetVelY = planetSpeed * cosTheta
+
+            val planetBody = CelestialBody(
+                id = planetIdCounter++,
+                name = planet.name,
+                mass = planet.mass,
+                positionX = planetPosX,
+                positionY = planetPosY,
+                velocityX = planetVelX,
+                velocityY = planetVelY,
+                radius = planet.radius,
+                colorHex = planet.colorHex,
+                description = planet.description
+            )
+            planetBodies.add(planetBody)
+        }
+
+        var sumPx = 0.0
+        var sumPy = 0.0
+        var sumMx = 0.0
+        var sumMy = 0.0
+
+        for (b in planetBodies) {
+            sumPx += b.mass * b.velocityX
+            sumPy += b.mass * b.velocityY
+            sumMx += b.mass * b.positionX
+            sumMy += b.mass * b.positionY
+        }
+
+        val sunPosX = -sumMx / sunMass
+        val sunPosY = -sumMy / sunMass
+        val sunVelX = -sumPx / sunMass
+        val sunVelY = -sumPy / sunMass
+
+        val sunBody = CelestialBody(
+            id = -1,
+            name = "Sun",
+            mass = sunMass,
+            positionX = sunPosX,
+            positionY = sunPosY,
+            velocityX = sunVelX,
+            velocityY = sunVelY,
+            radius = 109.0,
+            colorHex = 0xFFFFD700L,
+            description = "The central star of our solar system."
+        )
+
+        val list = ArrayList<CelestialBody>(planetBodies.size + 1)
+        list.add(sunBody)
+        list.addAll(planetBodies)
+        return list
+    }
+
+    /**
+     * Creates an isolated high-performance subsystem for [planetName] and all of its confirmed moons.
+     * Computes Keplerian circular velocities and conserves barycentric net momentum.
+     */
+    fun createPlanetSubsystem(planetName: String): ScenarioPreset {
+        val planet = planetsData.firstOrNull { it.name.equals(planetName, ignoreCase = true) }
+            ?: planetsData.first { it.name == "Earth" }
+
+        val symbol = getPlanetSymbol(planet.name)
+        val moonCount = planet.moons.size
+        val subtitle = when (moonCount) {
+            0 -> "Isolated Planetary Telemetry"
+            1 -> "1 Confirmed Natural Satellite"
+            else -> "$moonCount Confirmed Natural Satellites"
+        }
+
+        val tracks = planet.moons.map { moon ->
+            PreloadedOrbitTrack(
+                radiusAU = moon.relativeDistance,
+                colorHex = moon.colorHex,
+                name = moon.name,
+                isRetrograde = moon.isRetrograde
+            )
+        }
+
+        return ScenarioPreset(
+            id = ScenarioPresetId.PLANET_SUBSYSTEM,
+            title = "${planet.name} System",
+            subtitle = subtitle,
+            description = planet.description,
+            iconEmoji = symbol,
+            accentColorHex = planet.colorHex,
+            g = 1.0 / 333000.0,
+            softening = 0.00005,
+            defaultSpeed = when (planet.name) {
+                "Jupiter", "Saturn" -> 0.35
+                else -> 0.5
+            },
+            preloadedTracks = tracks,
+            bodiesFactory = { createSubsystemBodies(planet) }
+        )
+    }
+
+    private fun createSubsystemBodies(planet: PlanetSpec): List<CelestialBody> {
+        val g = 1.0 / 333000.0
+        val moonBodies = ArrayList<CelestialBody>(planet.moons.size)
+        var moonIdCounter = 101
+
+        for ((moonIdx, moon) in planet.moons.withIndex()) {
+            val moonAngle = moonIdx * 2.39996323 // Golden angle distribution
+            val cosAngle = cos(moonAngle)
+            val sinAngle = sin(moonAngle)
+            val relDist = moon.relativeDistance
+
+            val moonPosX = relDist * cosAngle
+            val moonPosY = relDist * sinAngle
+
+            val vRelMag = sqrt(g * planet.mass / relDist) * (if (moon.isRetrograde) -1.0 else 1.0)
+            val moonVelX = -vRelMag * sinAngle
+            val moonVelY = vRelMag * cosAngle
+
+            val moonBody = CelestialBody(
+                id = moonIdCounter++,
+                name = moon.name,
+                mass = moon.mass,
+                positionX = moonPosX,
+                positionY = moonPosY,
+                velocityX = moonVelX,
+                velocityY = moonVelY,
+                radius = moon.radius,
+                colorHex = moon.colorHex,
+                description = moon.description
+            )
+            moonBodies.add(moonBody)
+        }
+
+        // Net linear momentum and barycenter balancing
+        var sumPx = 0.0
+        var sumPy = 0.0
+        var sumMx = 0.0
+        var sumMy = 0.0
+
+        for (m in moonBodies) {
+            sumPx += m.mass * m.velocityX
+            sumPy += m.mass * m.velocityY
+            sumMx += m.mass * m.positionX
+            sumMy += m.mass * m.positionY
+        }
+
+        val planetPosX = if (planet.mass > 0.0) -sumMx / planet.mass else 0.0
+        val planetPosY = if (planet.mass > 0.0) -sumMy / planet.mass else 0.0
+        val planetVelX = if (planet.mass > 0.0) -sumPx / planet.mass else 0.0
+        val planetVelY = if (planet.mass > 0.0) -sumPy / planet.mass else 0.0
+
+        val planetBody = CelestialBody(
+            id = 1,
+            name = planet.name,
+            mass = planet.mass,
+            positionX = planetPosX,
+            positionY = planetPosY,
+            velocityX = planetVelX,
+            velocityY = planetVelY,
+            radius = planet.radius,
+            colorHex = planet.colorHex,
+            description = planet.description
+        )
+
+        val list = ArrayList<CelestialBody>(moonBodies.size + 1)
+        list.add(planetBody)
+        list.addAll(moonBodies)
         return list
     }
 
